@@ -1,0 +1,29 @@
+# Bot Telegram
+python-telegram-bot[job-queue]==21.10
+
+# Servidor Web (webhooks)
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Banco de Dados
+supabase==2.10.0
+
+# HTTP async
+httpx==0.27.2
+
+# Configuração
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# Cripto / Exchanges
+python-binance==1.0.19
+
+# Geração de imagens (comprovante)
+Pillow==11.1.0
+qrcode==8.0
+
+# Logging
+loguru==0.7.3
+
+# Utilitários
+pytz==2024.2
