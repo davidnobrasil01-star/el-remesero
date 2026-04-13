@@ -9,7 +9,7 @@ Inicia FastAPI + PTB no mesmo processo:
 import asyncio
 from contextlib import asynccontextmanager
 from loguru import logger
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from config.settings import settings
@@ -78,7 +78,7 @@ fastapi_app.include_router(noones_router)
 
 
 @fastapi_app.post("/telegram")
-async def telegram_webhook(request) -> JSONResponse:
+async def telegram_webhook(request: Request) -> JSONResponse:
     """Recebe updates do Telegram (somente em modo webhook/produção)."""
     from telegram import Update
     import json
