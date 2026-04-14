@@ -39,7 +39,7 @@ def listar_por_usuario(usuario_id: str, limite: int = 10) -> list[Transacao]:
     sb = get_supabase()
     res = (
         sb.table("transacoes")
-        .select("*, destinatarios(apelido, nome_completo)")
+        .select("*")
         .eq("usuario_id", usuario_id)
         .order("criado_em", desc=True)
         .limit(limite)

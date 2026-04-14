@@ -146,7 +146,7 @@ async def gerar_e_enviar_comprovante(transacao_id: str, telegram_id: int) -> Non
     res = sb.table("usuarios").select("nome_completo, username").eq("id", str(transacao.usuario_id)).execute()
     nome_remetente = "Remetente"
     if res and res.data:
-        nome_remetente = res.data.get("nome_completo") or res.data.get("username") or "Remetente"
+        nome_remetente = res.data[0].get("nome_completo") or res.data[0].get("username") or "Remetente"
 
     nome_destinatario = destinatario.nome_completo if destinatario else "Destinatário"
     criado_em = transacao.criado_em or datetime.utcnow()

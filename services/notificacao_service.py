@@ -38,7 +38,6 @@ async def notificar_pix_confirmado(transacao_id: str) -> None:
     if not transacao:
         return
 
-    usuario = usuario_repo.buscar_por_telegram_id(0)  # busca por usuario_id abaixo
     destinatario = destinatario_repo.buscar_por_id(str(transacao.destinatario_id))
 
     # Busca telegram_id via usuario_id

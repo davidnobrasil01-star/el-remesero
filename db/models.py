@@ -1,9 +1,11 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel, UUID4, ConfigDict
 
 
 class Usuario(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     id: Optional[UUID4] = None
     telegram_id: int
     username: Optional[str] = None
@@ -15,6 +17,8 @@ class Usuario(BaseModel):
 
 
 class Destinatario(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     id: Optional[UUID4] = None
     usuario_id: UUID4
     apelido: str
@@ -36,6 +40,8 @@ class StatusTransacao:
 
 
 class Transacao(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     id: Optional[UUID4] = None
     usuario_id: UUID4
     destinatario_id: UUID4
@@ -59,6 +65,8 @@ class Transacao(BaseModel):
 
 
 class CotacaoCache(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     id: Optional[UUID4] = None
     par: str
     taxa: float
