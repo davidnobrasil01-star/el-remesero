@@ -20,10 +20,27 @@ from services.notificacao_service import set_bot_app
 from jobs.monitor_pagamentos import registrar_job
 
 
+def _verificar_credenciais() -> None:
+    """Loga avisos para credenciais opcionais não configuradas."""
+    modo = "AUTOMÁTICO" if (settings.binance_api_key and (settings.tropipay_client_id or settings.noones_api_key)) else "MANUAL"
+    logger.info(f"Modo de entrega: {modo}")
+
+    if not settings.binance_api_key:
+        logger.warning("BINANCE_API_KEY não configurada — entrega automática desativada")
+    if not settings.tropipay_client_id:
+        logger.warning("TROPIPAY_CLIENT_ID não configurada — entrega MLC automática desativada")
+    if not settings.noones_api_key:
+        logger.warning("NOONES_API_KEY não configurada — entrega CUP automática desativada")
+    if not settings.mercadopago_webhook_secret:
+        logger.warning("MERCADOPAGO_WEBHOOK_SECRET não configurada — assinatura webhook desativada")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gerencia o ciclo de vida do bot junto com o FastAPI."""
     logger.info("🚀 Iniciando El Remesero...")
+
+    _verificar_credenciais()
 
     ptb_app = criar_application()
 
@@ -34,6 +51,13 @@ async def lifespan(app: FastAPI):
     registrar_job(ptb_app)
 
     await ptb_app.initialize()
+
+    # Configura lista de comandos visível no Telegram
+    from telegram import BotCommand
+    await ptb_app.bot.set_my_commands([
+        BotCommand("start", "Menu principal"),
+        BotCommand("ajuda", "Como funciona o El Remesero"),
+    ])
 
     if settings.webhook_mode and settings.webhook_url:
         # Modo produção: Telegram envia updates via webhook

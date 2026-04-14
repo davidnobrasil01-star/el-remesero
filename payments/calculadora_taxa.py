@@ -9,54 +9,67 @@ Lógica de negócio:
 """
 
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from loguru import logger
 from config.settings import settings
 from db.client import get_supabase
 
 
 async def obter_taxa_brl_usd() -> float:
-    """Obtém a cotação BRL/USD do Banco Central do Brasil."""
-    try:
-        hoje = datetime.utcnow().strftime("%m-%d-%Y")
-        url = f"https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarDia(dataCotacao=@dataCotacao)?@dataCotacao='{hoje}'&$format=json&$select=cotacaoVenda"
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            dados = resp.json()
-            if dados.get("value"):
-                taxa = float(dados["value"][-1]["cotacaoVenda"])
-                await _salvar_cotacao_cache("BRL_USD", taxa, "bcb")
-                return taxa
-    except Exception as e:
-        logger.warning(f"Erro ao buscar cotação BRL/USD do BCB: {e}")
+    """
+    Obtém a cotação BRL/USD do Banco Central do Brasil.
+    Tenta os últimos 5 dias úteis (fins de semana e feriados não têm cotação).
+    """
+    async with httpx.AsyncClient(timeout=10) as client:
+        for dias_atras in range(5):
+            try:
+                data = (datetime.utcnow() - timedelta(days=dias_atras)).strftime("%m-%d-%Y")
+                url = (
+                    f"https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/"
+                    f"CotacaoDolarDia(dataCotacao=@dataCotacao)?@dataCotacao=%27{data}%27"
+                    f"&$format=json&$select=cotacaoVenda"
+                )
+                resp = await client.get(url)
+                resp.raise_for_status()
+                dados = resp.json()
+                if dados.get("value"):
+                    taxa = float(dados["value"][-1]["cotacaoVenda"])
+                    await _salvar_cotacao_cache("BRL_USD", taxa, "bcb")
+                    logger.debug(f"BCB BRL/USD: {taxa} (referência: {data})")
+                    return taxa
+            except Exception as e:
+                logger.debug(f"BCB sem cotação para {data}: {e}")
+                continue
 
-    # Fallback: usar cache do banco
+    logger.warning("BCB indisponível — usando cache ou fallback")
     return await _buscar_cotacao_cache("BRL_USD", fallback=5.70)
 
 
 async def obter_taxa_usd_cup() -> float:
-    """Obtém a cotação informal USD/CUP via ElToque."""
-    try:
-        url = "https://eltoque.com/tasas-de-cambio-de-moneda-en-cuba-hoy"
-        async with httpx.AsyncClient(timeout=10, headers={"User-Agent": "Mozilla/5.0"}) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            # ElToque publica JSON embutido na página — extraímos via API não oficial
-        # Alternativa: API JSON direta do ElToque
-        api_url = "https://api.eltoque.com/v1/trm?date="
-        hoje_iso = datetime.utcnow().strftime("%Y-%m-%d")
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{api_url}{hoje_iso}")
-            resp.raise_for_status()
-            dados = resp.json()
-            cup_por_usd = float(dados.get("USD", {}).get("value", 0))
-            if cup_por_usd > 0:
-                await _salvar_cotacao_cache("USD_CUP", cup_por_usd, "eltoque")
-                return cup_por_usd
-    except Exception as e:
-        logger.warning(f"Erro ao buscar cotação USD/CUP do ElToque: {e}")
+    """
+    Obtém a cotação informal USD/CUP via ElToque.
+    Tenta a API e cai para cache/fallback se indisponível.
+    """
+    # Tentativa 1: API ElToque com data atual
+    for endpoint in [
+        f"https://api.eltoque.com/v1/trm?date={datetime.utcnow().strftime('%Y-%m-%d')}",
+        "https://api.eltoque.com/v1/trm",
+    ]:
+        try:
+            async with httpx.AsyncClient(timeout=8, headers={"User-Agent": "Mozilla/5.0"}) as client:
+                resp = await client.get(endpoint)
+                if resp.status_code == 200:
+                    dados = resp.json()
+                    cup_por_usd = float(dados.get("USD", {}).get("value", 0))
+                    if cup_por_usd > 100:   # sanity check: taxa informal > 100
+                        await _salvar_cotacao_cache("USD_CUP", cup_por_usd, "eltoque")
+                        logger.debug(f"ElToque USD/CUP: {cup_por_usd}")
+                        return cup_por_usd
+        except Exception as e:
+            logger.debug(f"ElToque indisponível ({endpoint}): {e}")
+            continue
 
+    logger.warning("ElToque indisponível — usando cache ou fallback (587 CUP/USD)")
     return await _buscar_cotacao_cache("USD_CUP", fallback=587.0)
 
 
