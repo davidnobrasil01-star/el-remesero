@@ -62,12 +62,20 @@ def buscar_pendentes_expiradas() -> list[Transacao]:
 
 
 def buscar_travadas_para_reprocessar() -> list[Transacao]:
+    """
+    Busca transações travadas há mais de 10 minutos.
+    Exclui transações Noones em AGUARDANDO_COMPRADOR ou ENTREGANDO com trade_id
+    (estão aguardando comprador P2P legitimamente — não devem ser reprocessadas).
+    """
     sb = get_supabase()
+    limite = (datetime.utcnow() - __import__('datetime').timedelta(minutes=10)).isoformat()
     res = (
         sb.table("transacoes")
         .select("*")
-        .in_("status", [StatusTransacao.PIX_CONFIRMADO, StatusTransacao.CONVERTENDO, StatusTransacao.ENTREGANDO])
+        .in_("status", [StatusTransacao.PIX_CONFIRMADO, StatusTransacao.CONVERTENDO])
         .lt("tentativas_entrega", 3)
+        .lt("atualizado_em", limite)
+        .is_("noones_trade_id", "null")   # exclui trades Noones ativos
         .execute()
     )
     return [Transacao(**t) for t in res.data]

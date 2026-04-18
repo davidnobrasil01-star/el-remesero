@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
     logger.info("Encerrando El Remesero...")
     if settings.webhook_mode:
         await ptb_app.bot.delete_webhook()
-    if ptb_app.updater.running:
+    if ptb_app.updater and ptb_app.updater.running:
         await ptb_app.updater.stop()
     await ptb_app.stop()
     await ptb_app.shutdown()

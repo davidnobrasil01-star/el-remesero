@@ -41,7 +41,7 @@ async def iniciar_transacao(
     # Criar ID único para correlacionar com o PIX
     correlation_id = f"REMESERO-{uuid.uuid4().hex[:12].upper()}"
 
-    # Criar cobrança PIX no OpenPix
+    # Criar cobrança PIX no Mercado Pago
     valor_centavos = int(round(valor_brl * 100))
     pix = await criar_cobranca(
         correlation_id=correlation_id,

@@ -16,7 +16,7 @@ def _get_client() -> Client:
 
 async def obter_preco_usdt_brl() -> float:
     """Retorna o preço atual de 1 USDT em BRL."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     client = _get_client()
     ticker = await loop.run_in_executor(
         None,
@@ -35,7 +35,7 @@ async def comprar_usdt(valor_brl: float) -> dict:
     Returns:
         dict com: usdt_comprado, preco_executado, order_id
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     client = _get_client()
 
     try:
@@ -71,7 +71,7 @@ async def comprar_usdt(valor_brl: float) -> dict:
 
 async def verificar_saldo_usdt() -> float:
     """Retorna o saldo disponível de USDT na conta Binance."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     client = _get_client()
     account = await loop.run_in_executor(None, client.get_account)
     for balance in account["balances"]:

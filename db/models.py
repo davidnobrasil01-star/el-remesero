@@ -34,6 +34,7 @@ class StatusTransacao:
     PIX_CONFIRMADO = "pix_confirmado"
     CONVERTENDO = "convertendo"
     ENTREGANDO = "entregando"
+    AGUARDANDO_COMPRADOR = "aguardando_comprador"  # Noones: oferta publicada, aguardando P2P
     CONCLUIDO = "concluido"
     FALHOU = "falhou"
     REVISAO_MANUAL = "revisao_manual"

@@ -2,7 +2,8 @@
 Job periódico de monitoramento de transações.
 Roda a cada 5 minutos e:
   1. Expira transações com PIX não pago após 20 min
-  2. Reprocessa transações travadas em pix_confirmado/convertendo/entregando
+  2. Reprocessa transações travadas em pix_confirmado/convertendo
+     (exclui ENTREGANDO com noones_trade_id — estão aguardando comprador P2P)
 """
 
 from loguru import logger

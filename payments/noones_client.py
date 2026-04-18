@@ -1,18 +1,62 @@
 """
 Cliente Noones P2P — venda de USDT com pagamento em CUP via Transfermovil.
-Documentação: https://docs.noones.com/
+Autenticação: OAuth 2.0 Client Credentials (client_id + client_secret → access_token).
+Documentação: https://dev.noones.com/documentation/noones-api
 """
 
+import time
 import httpx
 from loguru import logger
 from config.settings import settings
 
 BASE_URL = "https://noones.com/api/noones/v1"
+TOKEN_URL = "https://auth.noones.com/oauth2/token"
+
+# Cache do token para evitar chamadas desnecessárias
+_token_cache: dict = {"access_token": None, "expires_at": 0.0}
 
 
-def _headers() -> dict:
+async def _get_access_token() -> str:
+    """
+    Obtém (ou reutiliza do cache) um access token OAuth 2.0.
+    Troca client_id + client_secret por Bearer token com TTL.
+    """
+    # Reutiliza se ainda válido (com 60s de margem)
+    if _token_cache["access_token"] and time.time() < _token_cache["expires_at"] - 60:
+        return _token_cache["access_token"]
+
+    client_id = settings.noones_api_key          # client_id da chave gerada no portal
+    client_secret = settings.noones_client_secret  # client_secret da chave gerada no portal
+
+    if not client_id or not client_secret:
+        raise RuntimeError("NOONES_API_KEY (client_id) e NOONES_CLIENT_SECRET não configurados")
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        dados = resp.json()
+
+    token = dados["access_token"]
+    expires_in = dados.get("expires_in", 3600)
+
+    _token_cache["access_token"] = token
+    _token_cache["expires_at"] = time.time() + expires_in
+    logger.debug(f"Noones token obtido (expira em {expires_in}s)")
+    return token
+
+
+async def _headers() -> dict:
+    token = await _get_access_token()
     return {
-        "Authorization": f"Bearer {settings.noones_api_key}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
@@ -27,16 +71,9 @@ async def criar_oferta_venda(
     Cria uma oferta de venda de USDT no Noones P2P.
     O comprador pagará CUP via Transfermovil para o cartão especificado.
 
-    Args:
-        valor_usdt: Quantidade de USDT a vender
-        numero_cartao_cup: Cartão cubano onde o comprador enviará CUP
-        nome_titular: Nome do titular do cartão
-        transacao_id: ID interno da transação
-
     Returns:
         dict com: oferta_id, link_oferta
     """
-    # Instruções de pagamento visíveis ao comprador
     instrucoes = (
         f"Envie via Transfermovil para o cartão: {numero_cartao_cup}\n"
         f"Titular: {nome_titular}\n"
@@ -61,19 +98,19 @@ async def criar_oferta_venda(
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             f"{BASE_URL}/offer/create",
-            headers=_headers(),
+            headers=await _headers(),
             json=payload,
         )
         resp.raise_for_status()
         dados = resp.json()
 
-        oferta_id = str(dados.get("data", {}).get("offer_hash", ""))
-        logger.info(f"Noones oferta criada: {oferta_id} | {valor_usdt} USDT")
+    oferta_id = str(dados.get("data", {}).get("offer_hash", ""))
+    logger.info(f"Noones oferta criada: {oferta_id} | {valor_usdt} USDT")
 
-        return {
-            "oferta_id": oferta_id,
-            "link_oferta": f"https://noones.com/buy-usdt/{oferta_id}",
-        }
+    return {
+        "oferta_id": oferta_id,
+        "link_oferta": f"https://noones.com/buy-usdt/{oferta_id}",
+    }
 
 
 async def desativar_oferta(oferta_id: str) -> bool:
@@ -82,7 +119,7 @@ async def desativar_oferta(oferta_id: str) -> bool:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 f"{BASE_URL}/offer/{oferta_id}/deactivate",
-                headers=_headers(),
+                headers=await _headers(),
             )
             return resp.status_code == 200
     except Exception as e:
@@ -96,7 +133,7 @@ async def buscar_trades_oferta(oferta_id: str) -> list:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{BASE_URL}/trade/list",
-                headers=_headers(),
+                headers=await _headers(),
                 params={"offer_hash": oferta_id, "page": 1},
             )
             resp.raise_for_status()
@@ -112,7 +149,7 @@ async def buscar_mensagens_trade(trade_id: str) -> list:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{BASE_URL}/trade/{trade_id}/chat",
-                headers=_headers(),
+                headers=await _headers(),
             )
             resp.raise_for_status()
             return resp.json().get("data", {}).get("messages", [])
@@ -122,14 +159,12 @@ async def buscar_mensagens_trade(trade_id: str) -> list:
 
 
 async def liberar_usdt(trade_id: str) -> bool:
-    """
-    Libera o USDT do escrow para o comprador após aprovação do admin.
-    """
+    """Libera o USDT do escrow para o comprador após aprovação do admin."""
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
                 f"{BASE_URL}/trade/{trade_id}/release",
-                headers=_headers(),
+                headers=await _headers(),
             )
             resp.raise_for_status()
             logger.info(f"Noones USDT liberado: trade {trade_id}")
@@ -145,7 +180,7 @@ async def cancelar_trade(trade_id: str) -> bool:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 f"{BASE_URL}/trade/{trade_id}/cancel",
-                headers=_headers(),
+                headers=await _headers(),
             )
             return resp.status_code == 200
     except Exception as e:

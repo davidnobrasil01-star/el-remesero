@@ -176,7 +176,7 @@ async def _entregar_noones_cup(transacao_id, transacao, destinatario, compra) ->
         transacao_id=transacao_id,
     )
 
-    transacao_repo.atualizar_status(transacao_id, "aguardando_comprador", {
+    transacao_repo.atualizar_status(transacao_id, StatusTransacao.AGUARDANDO_COMPRADOR, {
         "noones_trade_id": resultado["oferta_id"],
     })
 

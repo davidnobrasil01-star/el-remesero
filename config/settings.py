@@ -27,7 +27,10 @@ class Settings(BaseSettings):
     tropipay_client_secret: str = ""
 
     # Noones P2P (entrega CUP semi-automática)
+    # noones_api_key = client_id gerado no portal dev.noones.com
+    # noones_client_secret = client_secret correspondente (OAuth 2.0)
     noones_api_key: str = ""
+    noones_client_secret: str = ""
     noones_webhook_secret: str = ""
 
     # Supabase

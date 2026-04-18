@@ -2,8 +2,13 @@
 Serviço Noones — processa comprovantes P2P e encaminha ao admin para aprovação.
 """
 
+import io
+import httpx
 from loguru import logger
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 from config.settings import settings
+from db.client import get_supabase
 from db.repositories import transacao_repo
 from db.models import StatusTransacao
 from payments.noones_client import buscar_mensagens_trade, liberar_usdt, cancelar_trade
@@ -20,8 +25,9 @@ async def processar_comprovante_noones(trade_id: str, payload: dict) -> None:
         logger.error("Bot não disponível para encaminhar comprovante")
         return
 
+    sb = get_supabase()
+
     # Busca transação pelo noones_trade_id
-    sb = __import__('db.client', fromlist=['get_supabase']).get_supabase()
     res = sb.table("transacoes").select("*").eq("noones_trade_id", trade_id).execute()
     if not res or not res.data:
         logger.warning(f"Trade Noones {trade_id} não encontrado nas transações")
@@ -41,14 +47,13 @@ async def processar_comprovante_noones(trade_id: str, payload: dict) -> None:
             imagem_url = msg["url"]
             break
 
-    # Montar mensagem para admin
+    # Buscar dados do destinatário
     dest_res = sb.table("destinatarios").select("*").eq("id", transacao_data["destinatario_id"]).execute()
     nome_dest = dest_res.data[0]["nome_completo"] if dest_res and dest_res.data else "Destinatário"
     cartao = dest_res.data[0].get("numero_cartao", "N/A") if dest_res and dest_res.data else "N/A"
     valor_cup = transacao_data.get("valor_cup_destinatario", 0)
     valor_brl = transacao_data.get("valor_brl", 0)
 
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     teclado = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Aprovar — liberar USDT", callback_data=f"noones_aprovar_{transacao_id}"),
@@ -76,10 +81,9 @@ async def processar_comprovante_noones(trade_id: str, payload: dict) -> None:
     # Enviar imagem do comprovante se disponível
     if imagem_url:
         try:
-            async with __import__('httpx').AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(imagem_url)
                 if resp.status_code == 200:
-                    import io
                     buf = io.BytesIO(resp.content)
                     buf.name = "comprovante.jpg"
                     await _bot_app.bot.send_photo(
@@ -102,8 +106,8 @@ async def processar_comprovante_noones(trade_id: str, payload: dict) -> None:
 
 
 async def aprovar_trade(transacao_id: str) -> bool:
-    """Admin aprovou — libera USDT no Noones."""
-    sb = __import__('db.client', fromlist=['get_supabase']).get_supabase()
+    """Admin aprovou — libera USDT no Noones e notifica cliente."""
+    sb = get_supabase()
     res = sb.table("transacoes").select("noones_trade_id, usuario_id").eq("id", transacao_id).execute()
     if not res or not res.data:
         return False
@@ -117,15 +121,14 @@ async def aprovar_trade(transacao_id: str) -> bool:
         transacao_repo.atualizar_status(transacao_id, StatusTransacao.CONCLUIDO, {
             "admin_aprovado": True,
         })
-        # Notificar cliente
         from services.notificacao_service import notificar_concluido
         await notificar_concluido(transacao_id)
     return sucesso
 
 
 async def rejeitar_trade(transacao_id: str) -> bool:
-    """Admin rejeitou — cancela o trade no Noones."""
-    sb = __import__('db.client', fromlist=['get_supabase']).get_supabase()
+    """Admin rejeitou — cancela o trade no Noones e manda para revisão manual."""
+    sb = get_supabase()
     res = sb.table("transacoes").select("noones_trade_id").eq("id", transacao_id).execute()
     if not res or not res.data:
         return False
