@@ -22,11 +22,24 @@ from jobs.monitor_pagamentos import registrar_job
 
 def _verificar_credenciais() -> None:
     """Loga avisos para credenciais opcionais não configuradas."""
-    modo = "AUTOMÁTICO" if (settings.binance_api_key and (settings.tropipay_client_id or settings.noones_api_key)) else "MANUAL"
+    tem_foxbit = bool(settings.foxbit_api_key and settings.foxbit_api_secret)
+    tem_mb = bool(settings.mb_api_key and settings.mb_api_secret)
+    tem_binance = bool(settings.binance_api_key and settings.binance_api_secret)
+    tem_exchange = tem_foxbit or tem_mb or tem_binance
+    tem_gateway = bool(settings.tropipay_client_id or settings.noones_api_key)
+
+    modo = "AUTOMÁTICO" if (tem_exchange and tem_gateway) else "MANUAL"
     logger.info(f"Modo de entrega: {modo}")
 
-    if not settings.binance_api_key:
-        logger.warning("BINANCE_API_KEY não configurada — entrega automática desativada")
+    if tem_foxbit:
+        logger.info("✅ Exchange: Foxbit (principal)")
+    elif tem_mb:
+        logger.info("✅ Exchange: Mercado Bitcoin (fallback)")
+    elif tem_binance:
+        logger.info("✅ Exchange: Binance (legado)")
+    else:
+        logger.warning("⚠️  Nenhuma exchange configurada — entrega automática desativada")
+
     if not settings.tropipay_client_id:
         logger.warning("TROPIPAY_CLIENT_ID não configurada — entrega MLC automática desativada")
     if not settings.noones_api_key:
