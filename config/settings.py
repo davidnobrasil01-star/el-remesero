@@ -18,7 +18,16 @@ class Settings(BaseSettings):
     openpix_app_id: str = ""
     openpix_webhook_secret: str = ""
 
-    # Binance
+    # Foxbit (PREFERENCIAL) — exchange brasileira, BRL→USDT
+    # Criar em: foxbit.com.br → Perfil → API → Nova chave (Leitura + Negociação)
+    foxbit_api_key: str = ""
+    foxbit_api_secret: str = ""
+
+    # Mercado Bitcoin (MB) — alternativa, requer 2FA pelo app
+    mb_api_key: str = ""
+    mb_api_secret: str = ""
+
+    # Binance (legado)
     binance_api_key: str = ""
     binance_api_secret: str = ""
 

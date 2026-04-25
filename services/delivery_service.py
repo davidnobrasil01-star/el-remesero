@@ -12,11 +12,30 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 def _modo_automatico_disponivel() -> bool:
-    """Retorna True apenas se Binance + pelo menos um gateway de entrega estiver configurado."""
+    """
+    Retorna True se há exchange (Foxbit, MB ou Binance) + pelo menos um gateway de entrega.
+    Prioridade: Foxbit > MB > Binance.
+    """
+    tem_foxbit = bool(settings.foxbit_api_key and settings.foxbit_api_secret)
+    tem_mb = bool(settings.mb_api_key and settings.mb_api_secret)
     tem_binance = bool(settings.binance_api_key and settings.binance_api_secret)
+    tem_exchange = tem_foxbit or tem_mb or tem_binance
     tem_tropipay = bool(settings.tropipay_client_id and settings.tropipay_client_secret)
     tem_noones = bool(settings.noones_api_key)
-    return tem_binance and (tem_tropipay or tem_noones)
+    return tem_exchange and (tem_tropipay or tem_noones)
+
+
+def _exchange_client():
+    """Retorna o módulo de exchange configurado (Foxbit > MB > Binance)."""
+    if settings.foxbit_api_key and settings.foxbit_api_secret:
+        from payments import foxbit_client
+        return foxbit_client, "Foxbit"
+    elif settings.mb_api_key and settings.mb_api_secret:
+        from payments import mb_client
+        return mb_client, "MB"
+    else:
+        from payments import binance_client
+        return binance_client, "Binance"
 
 
 async def entregar_transacao(transacao_id: str) -> bool:
@@ -106,7 +125,7 @@ async def falhar_entrega_manual(transacao_id: str) -> None:
 # ── Modo Automático ───────────────────────────────────────────────────────────
 
 async def _entregar_automatico(transacao_id: str) -> bool:
-    """Entrega automática via Binance + TropiPay/Noones."""
+    """Entrega automática via MB/Binance + TropiPay/Noones."""
     transacao = transacao_repo.buscar_por_id(transacao_id)
     destinatario = destinatario_repo.buscar_por_id(str(transacao.destinatario_id))
     metodo = destinatario.metodo_entrega or "mlc"
@@ -118,9 +137,9 @@ async def _entregar_automatico(transacao_id: str) -> bool:
     })
 
     try:
-        from payments.binance_client import comprar_usdt
-        compra = await comprar_usdt(transacao.valor_brl)
-        logger.info(f"USDT comprado: {compra['usdt_comprado']} para {transacao_id}")
+        exchange, exchange_nome = _exchange_client()
+        compra = await exchange.comprar_usdt(transacao.valor_brl)
+        logger.info(f"[{exchange_nome}] USDT comprado: {compra['usdt_comprado']} para {transacao_id}")
 
         if metodo == "mlc" and settings.tropipay_client_id:
             return await _entregar_tropipay(transacao_id, transacao, destinatario, compra)
@@ -139,7 +158,8 @@ async def _entregar_automatico(transacao_id: str) -> bool:
 
 async def _entregar_tropipay(transacao_id, transacao, destinatario, compra) -> bool:
     from payments.tropipay_client import enviar_para_cartao_mlc
-    from payments.binance_client import obter_preco_usdt_brl
+    exchange, _ = _exchange_client()
+    obter_preco_usdt_brl = exchange.obter_preco_usdt_brl
 
     transacao_repo.atualizar_status(transacao_id, StatusTransacao.ENTREGANDO)
 
