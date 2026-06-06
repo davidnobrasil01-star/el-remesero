@@ -26,7 +26,8 @@ async def receber_noones(request: Request) -> Response:
     payload_raw = await request.body()
     assinatura = request.headers.get("x-noones-signature", "")
 
-    if assinatura and not _verificar_assinatura(payload_raw, assinatura):
+    # Valida assinatura somente se NOONES_WEBHOOK_SECRET estiver configurado
+    if assinatura and settings.noones_webhook_secret and not _verificar_assinatura(payload_raw, assinatura):
         logger.warning("Webhook Noones: assinatura inválida")
         raise HTTPException(status_code=400, detail="Assinatura inválida")
 

@@ -43,7 +43,8 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/admin_entregar [id] — Entregar transação manualmente\n"
         "/admin_bloquear [telegram_id] — Bloquear usuário\n"
         "/admin_revisao — Listar transações em revisão manual\n"
-        "/admin_noones_debug [busca] — Diagnosticar API Noones\n"
+        "/admin_noones_debug — Diagnosticar API Noones\n"
+        "/admin_noones_cleanup — Desativar ofertas de teste no Noones\n"
     )
     await update.message.reply_text(texto, parse_mode="HTML")
 
@@ -167,6 +168,46 @@ async def cmd_noones_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"❌ Falha ao criar oferta:\n<code>{e}</code>",
             parse_mode="HTML",
         )
+
+
+@apenas_admin
+async def cmd_noones_cleanup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Desativa ofertas de teste no Noones.
+    Uso: /admin_noones_cleanup          → desativa ofertas de teste conhecidas
+         /admin_noones_cleanup [hash1] [hash2] → desativa hashes específicos
+    """
+    from payments.noones_client import desativar_oferta
+
+    # Ofertas criadas durante os testes de desenvolvimento
+    TEST_OFFERS = [
+        "Tcnt2kNJ8Rt",  # teste UI sessão anterior
+        "Au3Ud7dupug",  # Teste A
+        "8gff54FopSV",  # Teste B
+        "wYYXrQSGitB",  # Teste B v2
+        "kgaKeCsFyhg",  # Teste final bem-sucedido
+    ]
+
+    # Se passados args, desativa apenas eles
+    ofertas = context.args if context.args else TEST_OFFERS
+
+    await update.message.reply_text(f"🧹 Desativando {len(ofertas)} ofertas de teste...")
+
+    ok, falhou = [], []
+    for oferta_id in ofertas:
+        sucesso = await desativar_oferta(oferta_id)
+        (ok if sucesso else falhou).append(oferta_id)
+
+    linhas = []
+    for o in ok:
+        linhas.append(f"✅ <code>{o}</code>")
+    for o in falhou:
+        linhas.append(f"❌ <code>{o}</code> (já inativa ou erro)")
+
+    await update.message.reply_text(
+        "🧹 <b>Resultado do cleanup:</b>\n" + "\n".join(linhas),
+        parse_mode="HTML",
+    )
 
 
 @apenas_admin

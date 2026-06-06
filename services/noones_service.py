@@ -11,14 +11,18 @@ from config.settings import settings
 from db.client import get_supabase
 from db.repositories import transacao_repo
 from db.models import StatusTransacao
-from payments.noones_client import buscar_mensagens_trade, liberar_usdt, cancelar_trade
+from payments.noones_client import (
+    buscar_mensagens_trade, liberar_usdt, cancelar_trade,
+    buscar_oferta_do_trade, enviar_instrucoes_trade, _texto_instrucoes,
+)
 
 
 async def processar_comprovante_noones(trade_id: str, payload: dict) -> None:
     """
     Quando comprador marca como pago no Noones:
-    1. Busca o comprovante no chat do trade
-    2. Encaminha ao admin no Telegram para aprovação
+    1. Localiza a transação pelo trade_hash (ou pelo offer_hash se monitor ainda não atualizou)
+    2. Busca o comprovante no chat do trade
+    3. Encaminha ao admin no Telegram para aprovação
     """
     from services.notificacao_service import _bot_app
     if not _bot_app:
@@ -27,12 +31,32 @@ async def processar_comprovante_noones(trade_id: str, payload: dict) -> None:
 
     sb = get_supabase()
 
-    # noones_trade_id pode estar no formato "trade_{trade_hash}" (após monitor detectar o trade)
-    # ou pode não ter sido atualizado ainda — tenta ambos os formatos
+    # Tenta 1: monitor já atualizou noones_trade_id para "trade_{hash}"
     res = sb.table("transacoes").select("*").eq("noones_trade_id", f"trade_{trade_id}").execute()
+
     if not res or not res.data:
-        # Fallback: busca direto pelo trade_id (compatibilidade)
-        res = sb.table("transacoes").select("*").eq("noones_trade_id", trade_id).execute()
+        # Tenta 2: webhook chegou antes do monitor — busca offer_hash via API Noones
+        offer_hash = await buscar_oferta_do_trade(trade_id)
+        if offer_hash:
+            res = sb.table("transacoes").select("*").eq("noones_trade_id", offer_hash).execute()
+            if res and res.data:
+                # Atualiza para o formato correto e envia instruções se ainda não foram enviadas
+                transacao_id_tmp = res.data[0]["id"]
+                sb.table("transacoes").update({
+                    "noones_trade_id": f"trade_{trade_id}"
+                }).eq("id", transacao_id_tmp).execute()
+                # Envia instruções no chat (o monitor pode não ter rodado ainda)
+                dest_res = sb.table("destinatarios").select("*").eq(
+                    "id", res.data[0]["destinatario_id"]
+                ).execute()
+                if dest_res and dest_res.data:
+                    instrucoes = _texto_instrucoes(
+                        numero_cartao_cup=dest_res.data[0].get("numero_cartao", ""),
+                        nome_titular=dest_res.data[0]["nome_completo"],
+                        transacao_id=transacao_id_tmp,
+                    )
+                    await enviar_instrucoes_trade(trade_id, instrucoes)
+
     if not res or not res.data:
         logger.warning(f"Trade Noones {trade_id} não encontrado nas transações")
         return

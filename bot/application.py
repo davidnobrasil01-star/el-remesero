@@ -18,6 +18,7 @@ from bot.handlers.admin import (
     cmd_revisao,
     cmd_bloquear,
     cmd_noones_debug,
+    cmd_noones_cleanup,
     cb_noones_aprovar,
     cb_noones_rejeitar,
     cb_entrega_ok,
@@ -44,6 +45,7 @@ def criar_application() -> Application:
     app.add_handler(CommandHandler("admin_revisao", cmd_revisao))
     app.add_handler(CommandHandler("admin_bloquear", cmd_bloquear))
     app.add_handler(CommandHandler("admin_noones_debug", cmd_noones_debug))
+    app.add_handler(CommandHandler("admin_noones_cleanup", cmd_noones_cleanup))
 
     # ConversationHandler (fluxo de envio) — deve vir ANTES dos CallbackQueryHandlers genéricos
     app.add_handler(criar_conversation_handler())
