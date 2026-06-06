@@ -12,6 +12,8 @@ from loguru import logger
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from config.settings import settings
 from bot.application import criar_application
 from webhooks.openpix_webhook import router as pix_router
@@ -107,6 +109,14 @@ fastapi_app = FastAPI(
     description="Bot de remessas Brasil → Cuba",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+# CORS — necessário para validação de webhook via browser (ex: portal Noones)
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 # Registrar routers
