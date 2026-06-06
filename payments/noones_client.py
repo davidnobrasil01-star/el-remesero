@@ -108,8 +108,9 @@ async def criar_oferta_venda(
         # offer_terms NÃO enviado: bank-transfer usa termos predefinidos
         # (isPredefined=true, isEditable=false). Enviar offer_terms causa erro
         # validation.is_required_with_predefined_offer_terms_ex
-        # default_flow_type NÃO enviado: valor "default" é rejeitado pela API
-        # pública /offer/create (funciona só no endpoint interno /offer-manager/save)
+        # "bt-auto" = valor correto para bank-transfer (API pública exige este valor;
+        # outros métodos usam "default", mas bank-transfer usa "bt-auto")
+        "default_flow_type": "bt-auto",
         "label": f"Remessa #{transacao_id[:8].upper()}",
     }
 
