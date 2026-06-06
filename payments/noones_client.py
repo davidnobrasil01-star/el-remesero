@@ -161,55 +161,72 @@ async def listar_metodos_pagamento(busca: str = "") -> list:
     return resultados
 
 
-async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
+async def testar_urls_base() -> dict:
     """
-    Testa diferentes variações do payload de criação de oferta.
-    Retorna um dict com os resultados de cada tentativa.
+    Testa diferentes base URLs do Noones para encontrar a correta.
+    Usa o endpoint GET /payment-method/list como sonda.
     """
-    resultados = {}
+    token = await _get_access_token()
+    headers_auth = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
 
-    # Variações a testar
-    variacoes = [
-        ("transfermovil_form", {
-            "currency": "USDT",
-            "payment_method": "transfermovil",
-            "type": "sell",
-            "margin": "0",
-            "range_min": "1",
-            "range_max": str(round(valor_usdt * 1.1, 2)),
-            "payment_window": "30",
-            "payment_details": "teste",
-            "offer_terms": "teste",
-        }),
-        ("transfermovil_offer_type_field", {
-            "currency": "USDT",
-            "payment_method": "transfermovil",
-            "offer_type_field": "sell",
-            "margin": "0",
-            "range_min": "1",
-            "range_max": str(round(valor_usdt * 1.1, 2)),
-            "payment_window": "30",
-            "payment_details": "teste",
-            "offer_terms": "teste",
-        }),
-        ("bank_transfer_test", {
-            "currency": "USDT",
-            "payment_method": "bank-transfer",
-            "type": "sell",
-            "margin": "0",
-            "range_min": "1",
-            "range_max": str(round(valor_usdt * 1.1, 2)),
-            "payment_window": "30",
-            "payment_details": "teste",
-            "offer_terms": "teste",
-        }),
+    urls_candidatas = [
+        ("api.noones.com/api/noones/v1", "https://api.noones.com/api/noones/v1/payment-method/list"),
+        ("api.noones.com/noones/v1",     "https://api.noones.com/noones/v1/payment-method/list"),
+        ("api.noones.com/v1",            "https://api.noones.com/v1/payment-method/list"),
+        ("noones.com/api/noones/v1",     "https://noones.com/api/noones/v1/payment-method/list"),
+        ("noones.com/api/v1",            "https://noones.com/api/v1/payment-method/list"),
     ]
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        for nome, payload in variacoes:
+    resultados = {}
+    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+        for nome, url in urls_candidatas:
+            try:
+                resp = await client.get(url, headers=headers_auth)
+                resultados[nome] = {
+                    "http_status": resp.status_code,
+                    "body": resp.text[:300],
+                }
+                logger.info(f"URL probe [{nome}]: {resp.status_code} | {resp.text[:200]}")
+            except Exception as e:
+                resultados[nome] = {"erro": str(e)}
+
+    return resultados
+
+
+async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
+    """
+    Testa criação de oferta com a base URL correta.
+    Retorna um dict com os resultados.
+    """
+    # Primeiro encontrar a URL correta
+    urls_base = [
+        "https://api.noones.com/api/noones/v1",
+        "https://noones.com/api/noones/v1",
+        "https://api.noones.com/noones/v1",
+    ]
+
+    payload = {
+        "currency": "USDT",
+        "payment_method": "transfermovil",
+        "type": "sell",
+        "margin": "0",
+        "range_min": "1",
+        "range_max": str(round(valor_usdt * 1.1, 2)),
+        "payment_window": "30",
+        "payment_details": "teste diagnostico",
+        "offer_terms": "teste diagnostico",
+    }
+
+    resultados = {}
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        for base in urls_base:
+            nome = base.replace("https://", "").replace("/", "_")
             try:
                 resp = await client.post(
-                    f"{BASE_URL}/offer/create",
+                    f"{base}/offer/create",
                     headers=await _headers(),
                     data=payload,
                 )
