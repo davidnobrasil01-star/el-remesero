@@ -84,11 +84,12 @@ async def criar_oferta_venda(
 
     payload = {
         "currency": "USDT",
-        "payment_method": "transfermovil",
-        "type": "sell",
+        "payment_method": "bank-transfer",          # único slug USDT confirmado funcional
+        "payment_method_label": "Transfermovil CUP",  # label visible para el comprador cubano
+        "offer_type_field": "sell",                  # campo correcto (no "type")
         "margin": "0",
         "range_min": "1",
-        "range_max": str(round(valor_usdt * 1.1, 2)),  # USD max ligeiramente acima
+        "range_max": str(round(valor_usdt * 1.1, 2)),
         "payment_window": "30",
         "payment_details": instrucoes,
         "offer_terms": instrucoes,
@@ -246,54 +247,54 @@ async def testar_urls_base() -> dict:
     return resultados
 
 
-async def testar_slugs_transfermovil() -> dict:
+async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
     """
-    Prueba diferentes slugs posibles para Transfermovil en Noones.
-    URL base correcta: https://api.noones.com/noones/v1
+    Prueba el payload correcto con bank-transfer + Transfermovil CUP label.
+    También prueba offer_type_field vs type para confirmar el campo correcto.
     """
-    slugs = [
-        "transfermovil",
-        "transfer-movil",
-        "transfermóvil",
-        "transfermovil-cup",
-        "cup-transfermovil",
-        "bank-transfer",   # slug conocido para confirmar que el endpoint funciona
-        "paypal",          # otro slug conocido
-    ]
-
-    payload_base = {
-        "currency": "USDT",
-        "type": "sell",
-        "margin": "0",
-        "range_min": "1",
-        "range_max": "12",
-        "payment_window": "30",
-        "payment_details": "teste",
-        "offer_terms": "teste",
+    casos = {
+        "bank_transfer_offer_type_field": {
+            "currency": "USDT",
+            "payment_method": "bank-transfer",
+            "payment_method_label": "Transfermovil CUP",
+            "offer_type_field": "sell",
+            "margin": "0",
+            "range_min": "1",
+            "range_max": str(round(valor_usdt * 1.1, 2)),
+            "payment_window": "30",
+            "payment_details": "DIAGNÓSTICO — NÃO CRIAR",
+            "offer_terms": "DIAGNÓSTICO — NÃO CRIAR",
+        },
+        "bank_transfer_type_sell": {
+            "currency": "USDT",
+            "payment_method": "bank-transfer",
+            "payment_method_label": "Transfermovil CUP",
+            "type": "sell",
+            "margin": "0",
+            "range_min": "1",
+            "range_max": str(round(valor_usdt * 1.1, 2)),
+            "payment_window": "30",
+            "payment_details": "DIAGNÓSTICO — NÃO CRIAR",
+            "offer_terms": "DIAGNÓSTICO — NÃO CRIAR",
+        },
     }
 
     resultados = {}
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-        for slug in slugs:
-            payload = {**payload_base, "payment_method": slug}
+        for nome, payload in casos.items():
             try:
                 resp = await client.post(
                     f"{BASE_URL}/offer/create",
                     headers=await _headers(),
                     data=payload,
                 )
-                body = resp.text[:300]
-                resultados[slug] = {"http": resp.status_code, "body": body}
-                logger.info(f"Slug test [{slug}]: HTTP {resp.status_code} | {body}")
+                body = resp.text[:400]
+                resultados[nome] = {"http_status": resp.status_code, "body": body}
+                logger.info(f"Offer test [{nome}]: HTTP {resp.status_code} | {body}")
             except Exception as e:
-                resultados[slug] = {"erro": str(e)}
+                resultados[nome] = {"http_status": "ERR", "body": str(e)}
 
     return resultados
-
-
-async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
-    """Alias para compatibilidade — usa testar_slugs_transfermovil."""
-    return await testar_slugs_transfermovil()
 
 
 async def desativar_oferta(oferta_id: str) -> bool:
