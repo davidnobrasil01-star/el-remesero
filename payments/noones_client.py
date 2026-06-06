@@ -9,7 +9,7 @@ import httpx
 from loguru import logger
 from config.settings import settings
 
-BASE_URL = "https://api.noones.com/api/noones/v1"
+BASE_URL = "https://api.noones.com/noones/v1"
 TOKEN_URL = "https://auth.noones.com/oauth2/token"
 
 # Cache do token para evitar chamadas desnecessárias
@@ -196,49 +196,54 @@ async def testar_urls_base() -> dict:
     return resultados
 
 
-async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
+async def testar_slugs_transfermovil() -> dict:
     """
-    Testa criação de oferta com a base URL correta.
-    Retorna um dict com os resultados.
+    Prueba diferentes slugs posibles para Transfermovil en Noones.
+    URL base correcta: https://api.noones.com/noones/v1
     """
-    # Primeiro encontrar a URL correta
-    urls_base = [
-        "https://api.noones.com/api/noones/v1",
-        "https://noones.com/api/noones/v1",
-        "https://api.noones.com/noones/v1",
+    slugs = [
+        "transfermovil",
+        "transfer-movil",
+        "transfermóvil",
+        "transfermovil-cup",
+        "cup-transfermovil",
+        "bank-transfer",   # slug conocido para confirmar que el endpoint funciona
+        "paypal",          # otro slug conocido
     ]
 
-    payload = {
+    payload_base = {
         "currency": "USDT",
-        "payment_method": "transfermovil",
         "type": "sell",
         "margin": "0",
         "range_min": "1",
-        "range_max": str(round(valor_usdt * 1.1, 2)),
+        "range_max": "12",
         "payment_window": "30",
-        "payment_details": "teste diagnostico",
-        "offer_terms": "teste diagnostico",
+        "payment_details": "teste",
+        "offer_terms": "teste",
     }
 
     resultados = {}
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-        for base in urls_base:
-            nome = base.replace("https://", "").replace("/", "_")
+        for slug in slugs:
+            payload = {**payload_base, "payment_method": slug}
             try:
                 resp = await client.post(
-                    f"{base}/offer/create",
+                    f"{BASE_URL}/offer/create",
                     headers=await _headers(),
                     data=payload,
                 )
-                resultados[nome] = {
-                    "http_status": resp.status_code,
-                    "body": resp.text[:400],
-                }
-                logger.info(f"Debug offer/create [{nome}]: {resp.status_code} | {resp.text[:300]}")
+                body = resp.text[:300]
+                resultados[slug] = {"http": resp.status_code, "body": body}
+                logger.info(f"Slug test [{slug}]: HTTP {resp.status_code} | {body}")
             except Exception as e:
-                resultados[nome] = {"erro": str(e)}
+                resultados[slug] = {"erro": str(e)}
 
     return resultados
+
+
+async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
+    """Alias para compatibilidade — usa testar_slugs_transfermovil."""
+    return await testar_slugs_transfermovil()
 
 
 async def desativar_oferta(oferta_id: str) -> bool:
