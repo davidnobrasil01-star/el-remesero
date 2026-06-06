@@ -110,7 +110,8 @@ async def criar_oferta_venda(
         "range_max": str(range_max_val),
         "payment_window": "30",
         "payment_details": instrucoes_pagamento,
-        "offer_terms": instrucoes_pagamento,
+        # offer_terms NÃO enviado: other-bank-transfer tem isPredefined=true
+        # o servidor usa os termos predefinidos — mandar o campo causa 500
         "default_flow_type": "default",
         "label": f"Remessa #{transacao_id[:8].upper()}",
     }
