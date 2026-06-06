@@ -6,7 +6,12 @@ Autenticação HMAC-SHA256:
   X-FB-ACCESS-SIGN      = HMAC-SHA256(secret, timestamp + method + path + body)
   X-FB-ACCESS-TIMESTAMP = Unix timestamp em milissegundos (string)
 
-Documentação: https://foxbit.com.br/api-docs/
+Notas:
+  - A Foxbit NÃO tem par USDT/BRL direto.
+  - Conversão BRL → USDT feita em 2 passos: BRL→BTC (btcbrl) + BTC→USDT (btcusdt).
+  - Endpoint de ticker correto: /rest/v3/markets/{symbol}/ticker/24hr
+
+Documentação: https://docs.foxbit.com.br/rest/v3/
 """
 
 import hmac
@@ -18,7 +23,8 @@ from loguru import logger
 from config.settings import settings
 
 BASE_URL = "https://api.foxbit.com.br"
-PAR = "USDTBRL"   # Par de negociação na Foxbit
+PAR_BTC_BRL  = "btcbrl"    # compra BTC com BRL
+PAR_BTC_USDT = "btcusdt"   # vende BTC por USDT
 
 
 # ── Autenticação ──────────────────────────────────────────────────────────────
@@ -44,60 +50,72 @@ def _auth_headers(method: str, path: str, body: str = "") -> dict:
     }
 
 
+def _extrair_preco(dados: dict) -> float:
+    """
+    Extrai preço do ticker v3.
+    Resposta: {last_trade: {price: ...}, best: {ask: {price: ...}, bid: {price: ...}}}
+    """
+    preco = (
+        (dados.get("last_trade") or {}).get("price") or
+        (dados.get("best") or {}).get("ask", {}).get("price") or
+        (dados.get("best") or {}).get("bid", {}).get("price") or
+        0
+    )
+    return float(preco)
+
+
 # ── Endpoints Públicos ────────────────────────────────────────────────────────
 
-async def obter_preco_usdt_brl() -> float:
-    """
-    Retorna o preço atual de 1 USDT em BRL via ticker público.
-    Usa o preço 'last' (última negociação).
-    """
-    url = f"{BASE_URL}/rest/v3/markets/{PAR}/ticker"
+async def _obter_ticker(par: str) -> dict:
+    """Busca ticker 24h de um par da Foxbit."""
+    url = f"{BASE_URL}/rest/v3/markets/{par}/ticker/24hr"
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url)
         resp.raise_for_status()
-        dados = resp.json()
+    return resp.json()
 
-    # Resposta: {"best_ask": "5.84", "best_bid": "5.82", "last_price": "5.83", ...}
-    preco = float(
-        dados.get("last_price") or
-        dados.get("ask") or
-        dados.get("best_ask") or 0
-    )
+
+async def obter_preco_btc_brl() -> float:
+    """Retorna o preço de 1 BTC em BRL."""
+    dados = await _obter_ticker(PAR_BTC_BRL)
+    preco = _extrair_preco(dados)
     if preco <= 0:
-        raise RuntimeError(f"Preço USDT/BRL inválido na Foxbit: {dados}")
-
-    logger.debug(f"Foxbit ticker USDT/BRL: R${preco:.4f}")
+        raise RuntimeError(f"Preço BTC/BRL inválido na Foxbit: {dados}")
+    logger.debug(f"Foxbit BTC/BRL: R${preco:,.2f}")
     return preco
+
+
+async def obter_preco_usdt_brl() -> float:
+    """
+    Calcula o preço de 1 USDT em BRL via cross-rate: BTC/BRL ÷ BTC/USDT.
+    A Foxbit não tem par USDT/BRL direto.
+    """
+    dados_brl  = await _obter_ticker(PAR_BTC_BRL)
+    dados_usdt = await _obter_ticker(PAR_BTC_USDT)
+
+    preco_btc_brl  = _extrair_preco(dados_brl)
+    preco_btc_usdt = _extrair_preco(dados_usdt)
+
+    if preco_btc_brl <= 0 or preco_btc_usdt <= 0:
+        raise RuntimeError(
+            f"Preços inválidos Foxbit: BTC/BRL={dados_brl}, BTC/USDT={dados_usdt}"
+        )
+
+    # USDT/BRL = (BRL por 1 BTC) ÷ (USDT por 1 BTC)
+    preco_usdt_brl = preco_btc_brl / preco_btc_usdt
+    logger.debug(
+        f"Foxbit cross-rate USDT/BRL: R${preco_usdt_brl:.4f} "
+        f"(BTC/BRL=R${preco_btc_brl:,.2f}, BTC/USDT={preco_btc_usdt:.2f})"
+    )
+    return preco_usdt_brl
 
 
 # ── Endpoints Privados ────────────────────────────────────────────────────────
 
-async def comprar_usdt(valor_brl: float) -> dict:
-    """
-    Executa ordem de compra de USDT com BRL na Foxbit.
-
-    Tipo: MARKET com quoteOrderQty (gasta exatamente valor_brl em BRL).
-
-    Args:
-        valor_brl: Valor em BRL a gastar na compra
-
-    Returns:
-        dict com: usdt_comprado, preco_executado, order_id, status
-    """
-    if not settings.foxbit_api_key or not settings.foxbit_api_secret:
-        raise RuntimeError("FOXBIT_API_KEY e FOXBIT_API_SECRET não configurados")
-
-    preco_atual = await obter_preco_usdt_brl()
-
-    # Payload: ordem de mercado comprando com valor fixo em BRL (quote)
-    payload = {
-        "market_symbol": PAR,
-        "side": "BUY",
-        "type": "MARKET",
-        "quote_quantity": str(round(valor_brl, 2)),  # BRL a gastar
-    }
-    body_str = json.dumps(payload, separators=(",", ":"))
+async def _executar_ordem(payload: dict) -> dict:
+    """Executa uma ordem na Foxbit e retorna os dados da resposta."""
     path = "/rest/v3/orders"
+    body_str = json.dumps(payload, separators=(",", ":"))
     headers = _auth_headers("POST", path, body_str)
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -108,39 +126,80 @@ async def comprar_usdt(valor_brl: float) -> dict:
         )
 
     if resp.status_code not in (200, 201):
-        logger.error(f"Foxbit comprar_usdt erro {resp.status_code}: {resp.text}")
+        logger.error(f"Foxbit ordem erro {resp.status_code}: {resp.text}")
         raise RuntimeError(f"Foxbit API erro {resp.status_code}: {resp.text[:200]}")
 
     dados = resp.json()
     logger.debug(f"Foxbit ordem resposta: {dados}")
+    return dados
 
-    # Formato Foxbit: {"id": "...", "quantity": "90.12", "quote_quantity": "500.00",
-    #                  "price": "5.55", "status": "FILLED", ...}
-    order_id = str(dados.get("id", "sem-id"))
-    qty = float(dados.get("quantity", 0) or 0)
-    cost = float(dados.get("quote_quantity", valor_brl) or valor_brl)
-    avg_price = float(dados.get("price", 0) or 0)
 
-    # Fallback se ordem ainda não foi preenchida (status PENDING)
-    if qty <= 0:
-        qty = round(valor_brl / preco_atual, 8)
-        avg_price = preco_atual
-        logger.warning(f"Foxbit ordem sem qty — estimando {qty:.8f} USDT")
-    elif avg_price <= 0:
-        avg_price = cost / qty if qty > 0 else preco_atual
+async def comprar_usdt(valor_brl: float) -> dict:
+    """
+    Compra USDT com BRL via Foxbit em 2 passos:
+      1. Compra BTC com BRL  (par btcbrl, BUY MARKET, quote_quantity = valor_brl)
+      2. Vende BTC por USDT  (par btcusdt, SELL MARKET, quantity = btc_comprado)
+
+    Args:
+        valor_brl: Valor em BRL a converter em USDT
+
+    Returns:
+        dict com: usdt_comprado, preco_executado, order_id, status
+    """
+    if not settings.foxbit_api_key or not settings.foxbit_api_secret:
+        raise RuntimeError("FOXBIT_API_KEY e FOXBIT_API_SECRET não configurados")
+
+    # Passo 1 — Comprar BTC com BRL
+    logger.info(f"Foxbit passo 1: comprando BTC com R${valor_brl:.2f}")
+    dados_btc = await _executar_ordem({
+        "market_symbol": PAR_BTC_BRL,
+        "side": "BUY",
+        "type": "MARKET",
+        "quote_quantity": str(round(valor_brl, 2)),
+    })
+
+    # Formato Foxbit: {"id": "...", "quantity": "0.00089", "quote_quantity": "500.00",
+    #                  "price": "560000.00", "status": "FILLED", ...}
+    btc_comprado = float(dados_btc.get("quantity") or 0)
+    order_id_btc = str(dados_btc.get("id", "sem-id"))
+
+    if btc_comprado <= 0:
+        preco_btc = await obter_preco_btc_brl()
+        btc_comprado = round(valor_brl / preco_btc, 8)
+        logger.warning(f"Foxbit BTC sem qty — estimando {btc_comprado:.8f} BTC")
+
+    logger.info(f"Foxbit passo 1 OK: {btc_comprado:.8f} BTC (order {order_id_btc})")
+
+    # Passo 2 — Vender BTC por USDT
+    logger.info(f"Foxbit passo 2: vendendo {btc_comprado:.8f} BTC por USDT")
+    dados_usdt = await _executar_ordem({
+        "market_symbol": PAR_BTC_USDT,
+        "side": "SELL",
+        "type": "MARKET",
+        "quantity": str(btc_comprado),
+    })
+
+    usdt_recebido = float(dados_usdt.get("quote_quantity") or dados_usdt.get("quantity") or 0)
+    order_id_usdt = str(dados_usdt.get("id", "sem-id"))
+
+    if usdt_recebido <= 0:
+        preco_usdt_brl = await obter_preco_usdt_brl()
+        usdt_recebido = round(valor_brl / preco_usdt_brl, 2)
+        logger.warning(f"Foxbit USDT sem qty — estimando {usdt_recebido:.2f} USDT")
+
+    preco_medio = round(valor_brl / usdt_recebido, 4) if usdt_recebido > 0 else 0
 
     logger.info(
-        f"Foxbit USDT comprado: {qty:.4f} USDT | "
-        f"Custo: R${cost:.2f} | "
-        f"Preço médio: R${avg_price:.4f} | "
-        f"Order ID: {order_id}"
+        f"Foxbit BRL→USDT concluído: R${valor_brl:.2f} → {usdt_recebido:.4f} USDT "
+        f"| Preço médio: R${preco_medio:.4f}/USDT "
+        f"| Orders: {order_id_btc}, {order_id_usdt}"
     )
 
     return {
-        "usdt_comprado": round(qty, 8),
-        "preco_executado": round(avg_price, 4),
-        "order_id": order_id,
-        "status": dados.get("status", "FILLED"),
+        "usdt_comprado": round(usdt_recebido, 8),
+        "preco_executado": preco_medio,
+        "order_id": order_id_usdt,
+        "status": dados_usdt.get("status", "FILLED"),
     }
 
 
