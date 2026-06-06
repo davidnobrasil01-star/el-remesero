@@ -161,6 +161,56 @@ async def listar_metodos_pagamento(busca: str = "") -> list:
     return resultados
 
 
+async def buscar_slug_por_palavra(palavra: str) -> list:
+    """
+    Busca el slug correcto probando diferentes rutas del endpoint payment-method.
+    Retorna lista de métodos que contienen la palabra buscada.
+    """
+    token = await _get_access_token()
+    headers_auth = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+    rutas_candidatas = [
+        f"GET {BASE_URL}/payment-method/list",
+        f"GET {BASE_URL}/payment-methods",
+        f"GET {BASE_URL}/payment-method",
+        f"GET {BASE_URL}/offer/payment-methods",
+        f"POST {BASE_URL}/payment-method/list",
+    ]
+
+    resultados = []
+    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+        for ruta in rutas_candidatas:
+            metodo_http, url = ruta.split(" ", 1)
+            try:
+                if metodo_http == "GET":
+                    resp = await client.get(url, headers=headers_auth, params={"page": 1})
+                else:
+                    resp = await client.post(url, headers=headers_auth, json={"page": 1})
+                logger.info(f"payment-method probe [{ruta}]: {resp.status_code} | {resp.text[:400]}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    metodos = (
+                        data.get("data", {}).get("payment_methods") or
+                        data.get("data", []) or
+                        data.get("payment_methods", [])
+                    )
+                    for m in metodos:
+                        slug = m.get("slug") or m.get("code") or m.get("id") or ""
+                        nome = m.get("name") or m.get("label") or ""
+                        if palavra.lower() in (str(slug) + str(nome)).lower():
+                            resultados.append({"ruta": ruta, "slug": slug, "nome": nome, "raw": str(m)[:200]})
+                    if metodos:
+                        # Encontrou métodos — retorna todos que matcham
+                        return resultados or [{"ruta": ruta, "total": len(metodos), "primeiros": str(metodos[:5])}]
+            except Exception as e:
+                logger.debug(f"Erro probe {ruta}: {e}")
+    return resultados
+
+
 async def testar_urls_base() -> dict:
     """
     Testa diferentes base URLs do Noones para encontrar a correta.

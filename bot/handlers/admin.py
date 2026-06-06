@@ -135,25 +135,26 @@ async def cmd_noones_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         f"🔍 Buscando métodos Noones com '{busca}'..."
     )
 
-    from payments.noones_client import listar_metodos_pagamento, testar_criar_oferta_debug, testar_urls_base
+    from payments.noones_client import listar_metodos_pagamento, testar_criar_oferta_debug, testar_urls_base, buscar_slug_por_palavra
 
-    # 1. Listar métodos de pagamento
+    # 1. Buscar slug correto
     try:
-        metodos = await listar_metodos_pagamento(busca)
+        metodos = await buscar_slug_por_palavra(busca)
         if metodos:
-            linhas = [f"💳 <b>Métodos Noones contendo '{busca}':</b>\n"]
-            for m in metodos[:20]:
-                slug = m.get("slug") or m.get("code") or m.get("id") or str(m)
-                nome = m.get("name") or m.get("label") or ""
-                linhas.append(f"• <code>{slug}</code> — {nome}")
-            await update.message.reply_text("\n".join(linhas), parse_mode="HTML")
+            linhas = [f"💳 <b>Métodos Noones com '{busca}':</b>\n"]
+            for m in metodos[:10]:
+                slug = m.get("slug", "")
+                nome = m.get("nome", "")
+                raw = m.get("raw", "")
+                ruta = m.get("ruta", "")
+                linhas.append(f"✅ <code>{slug}</code> — {nome}\n<i>{ruta}</i>\n{raw[:100]}")
+            await update.message.reply_text("\n".join(linhas)[:4000], parse_mode="HTML")
         else:
             await update.message.reply_text(
-                f"⚠️ Nenhum método encontrado com '{busca}'. "
-                f"Veja os logs do Railway para a lista completa."
+                f"⚠️ Slug '{busca}' não encontrado. Ver logs Railway para detalhes das rotas testadas."
             )
     except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao listar métodos: {e}")
+        await update.message.reply_text(f"❌ Erro ao buscar slug: {e}")
 
     # 2. Testar URLs base
     await update.message.reply_text("🧪 Testando 5 URLs base do Noones...")
