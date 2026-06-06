@@ -27,8 +27,12 @@ async def processar_comprovante_noones(trade_id: str, payload: dict) -> None:
 
     sb = get_supabase()
 
-    # Busca transação pelo noones_trade_id
-    res = sb.table("transacoes").select("*").eq("noones_trade_id", trade_id).execute()
+    # noones_trade_id pode estar no formato "trade_{trade_hash}" (após monitor detectar o trade)
+    # ou pode não ter sido atualizado ainda — tenta ambos os formatos
+    res = sb.table("transacoes").select("*").eq("noones_trade_id", f"trade_{trade_id}").execute()
+    if not res or not res.data:
+        # Fallback: busca direto pelo trade_id (compatibilidade)
+        res = sb.table("transacoes").select("*").eq("noones_trade_id", trade_id).execute()
     if not res or not res.data:
         logger.warning(f"Trade Noones {trade_id} não encontrado nas transações")
         return
@@ -105,6 +109,13 @@ async def processar_comprovante_noones(trade_id: str, payload: dict) -> None:
     })
 
 
+def _extrair_trade_hash(valor: str) -> str:
+    """Remove o prefixo 'trade_' do noones_trade_id se presente."""
+    if valor and valor.startswith("trade_"):
+        return valor[len("trade_"):]
+    return valor or ""
+
+
 async def aprovar_trade(transacao_id: str) -> bool:
     """Admin aprovou — libera USDT no Noones e notifica cliente."""
     sb = get_supabase()
@@ -112,7 +123,7 @@ async def aprovar_trade(transacao_id: str) -> bool:
     if not res or not res.data:
         return False
 
-    trade_id = res.data[0].get("noones_trade_id", "")
+    trade_id = _extrair_trade_hash(res.data[0].get("noones_trade_id", ""))
     if not trade_id:
         return False
 
@@ -133,7 +144,7 @@ async def rejeitar_trade(transacao_id: str) -> bool:
     if not res or not res.data:
         return False
 
-    trade_id = res.data[0].get("noones_trade_id", "")
+    trade_id = _extrair_trade_hash(res.data[0].get("noones_trade_id", ""))
     sucesso = await cancelar_trade(trade_id) if trade_id else True
     if sucesso:
         transacao_repo.atualizar_status(transacao_id, StatusTransacao.REVISAO_MANUAL, {

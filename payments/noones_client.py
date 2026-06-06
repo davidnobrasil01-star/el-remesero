@@ -62,6 +62,18 @@ async def _headers(content_type: str = "application/x-www-form-urlencoded") -> d
     }
 
 
+def _texto_instrucoes(numero_cartao_cup: str, nome_titular: str, transacao_id: str) -> str:
+    """Texto de instruções de pagamento enviado no chat do trade."""
+    return (
+        f"Realize o pagamento via Transfermovil ao cartao: {numero_cartao_cup}\n"
+        f"Titular da conta: {nome_titular}\n"
+        f"Referencia da transferencia: {transacao_id[:8].upper()}\n"
+        f"Apos realizar o pagamento, envie o comprovante (screenshot) neste chat. "
+        f"O USDT sera liberado assim que o pagamento for confirmado. "
+        f"Prazo maximo para pagamento: 30 minutos."
+    )
+
+
 async def criar_oferta_venda(
     valor_usdt: float,
     numero_cartao_cup: str,
@@ -72,25 +84,16 @@ async def criar_oferta_venda(
     Cria uma oferta de venda de USDT no Noones P2P.
     O comprador pagará CUP via Transfermovil para o cartão especificado.
 
-    Campos confirmados pela API Noones:
-    - crypto_currency_code: "USDT" (criptomoeda que o vendedor oferece)
-    - currency: "USD"  (moeda fiat — Noones não suporta CUP/BRL)
-    - payment_method: "bank-transfer" (Transfermovil não existe como slug; usamos bank-transfer)
-    - payment_method_label: "Transfermovil CUP" (label livre para bank-transfer)
-    - offer_type_field: "sell" (não "type")
+    Campos confirmados pela API Noones (other-bank-transfer):
+    - payment_method: "other-bank-transfer" — não exige bank_accounts, sem payment_method_label
+    - default_flow_type: "default"
+    - payment_details NÃO enviado: causa 500 para other-bank-transfer (bug Noones API)
+      As instruções são enviadas via chat do trade em enviar_instrucoes_trade().
+    - range_min/range_max: inteiros como string ("10" não "10.0")
 
     Returns:
-        dict com: oferta_id, link_oferta
+        dict com: oferta_id, link_oferta, instrucoes (para envio no chat do trade)
     """
-    instrucoes_pagamento = (
-        f"Realize o pagamento via Transfermovil ao cartao: {numero_cartao_cup}\n"
-        f"Titular da conta: {nome_titular}\n"
-        f"Referencia da transferencia: {transacao_id[:8].upper()}\n"
-        f"Apos realizar o pagamento, envie o comprovante (screenshot) neste chat. "
-        f"O USDT sera liberado assim que o pagamento for confirmado. "
-        f"Prazo maximo para pagamento: 30 minutos."
-    )
-
     # range_min mínimo é $10 USD (regra Noones); range_max deve ser > range_min
     # API exige strings sem decimal ("10" não "10.0")
     range_min_int = 10
@@ -99,15 +102,15 @@ async def criar_oferta_venda(
     payload = {
         "crypto_currency_code": "USDT",
         "currency": "USD",
-        # "other-bank-transfer": sem bank_accounts, sem payment_method_label
-        # default_flow_type="default". Confirmado funcionando via Teste A/B.
+        # "other-bank-transfer": confirmado funcionando (Teste A/B).
+        # payment_details NÃO enviado — causa 500 (bug da API Noones).
+        # Instruções enviadas no chat do trade via enviar_instrucoes_trade().
         "payment_method": "other-bank-transfer",
         "offer_type_field": "sell",
         "margin": "0",
         "range_min": str(range_min_int),
         "range_max": str(range_max_int),
         "payment_window": "30",
-        "payment_details": instrucoes_pagamento,
         "default_flow_type": "default",
         "label": f"Remessa #{transacao_id[:8].upper()}",
     }
@@ -143,7 +146,29 @@ async def criar_oferta_venda(
     return {
         "oferta_id": oferta_id,
         "link_oferta": f"https://noones.com/buy-usdt/{oferta_id}",
+        # instrucoes guardadas para enviar no chat quando o trade abrir
+        "instrucoes": _texto_instrucoes(numero_cartao_cup, nome_titular, transacao_id),
     }
+
+
+async def enviar_instrucoes_trade(trade_id: str, mensagem: str) -> bool:
+    """
+    Envia uma mensagem no chat do trade (ex: instruções de pagamento).
+    Chamado quando um trade é aberto pelo comprador.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{BASE_URL}/trade/{trade_id}/chat",
+                headers=await _headers(),
+                data={"message": mensagem},
+            )
+            resp.raise_for_status()
+            logger.info(f"Noones instrucoes enviadas no trade {trade_id}")
+            return True
+    except Exception as e:
+        logger.error(f"Erro ao enviar instrucoes no trade {trade_id}: {e}")
+        return False
 
 
 async def desativar_oferta(oferta_id: str) -> bool:
@@ -161,7 +186,7 @@ async def desativar_oferta(oferta_id: str) -> bool:
 
 
 async def buscar_trades_oferta(oferta_id: str) -> list:
-    """Busca trades ativos de uma oferta."""
+    """Busca trades ativos de uma oferta pelo offer_hash."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
@@ -174,6 +199,27 @@ async def buscar_trades_oferta(oferta_id: str) -> list:
     except Exception as e:
         logger.error(f"Erro ao buscar trades Noones: {e}")
         return []
+
+
+async def buscar_oferta_do_trade(trade_id: str) -> str:
+    """Retorna o offer_hash associado a um trade_hash."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{BASE_URL}/trade/{trade_id}",
+                headers=await _headers("application/json"),
+            )
+            resp.raise_for_status()
+            dados = resp.json().get("data", {})
+            # A resposta pode ter offer_hash diretamente ou aninhado
+            return (
+                dados.get("offer_hash") or
+                dados.get("trade", {}).get("offer_hash") or
+                ""
+            )
+    except Exception as e:
+        logger.error(f"Erro ao buscar offer_hash do trade {trade_id}: {e}")
+        return ""
 
 
 async def buscar_mensagens_trade(trade_id: str) -> list:
