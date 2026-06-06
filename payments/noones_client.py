@@ -9,7 +9,7 @@ import httpx
 from loguru import logger
 from config.settings import settings
 
-BASE_URL = "https://noones.com/api/noones/v1"
+BASE_URL = "https://api.noones.com/api/noones/v1"
 TOKEN_URL = "https://auth.noones.com/oauth2/token"
 
 # Cache do token para evitar chamadas desnecessárias
@@ -53,11 +53,12 @@ async def _get_access_token() -> str:
     return token
 
 
-async def _headers() -> dict:
+async def _headers(content_type: str = "application/x-www-form-urlencoded") -> dict:
     token = await _get_access_token()
     return {
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
+        "Content-Type": content_type,
+        "Accept": "application/json; version=1",
     }
 
 
@@ -85,22 +86,26 @@ async def criar_oferta_venda(
         "currency": "USDT",
         "payment_method": "transfermovil",
         "type": "sell",
-        "amount": str(round(valor_usdt, 2)),
         "margin": "0",
-        "payment_window": 30,
+        "range_min": "1",
+        "range_max": str(round(valor_usdt * 1.1, 2)),  # USD max ligeiramente acima
+        "payment_window": "30",
         "payment_details": instrucoes,
         "offer_terms": instrucoes,
         "label": f"Remessa #{transacao_id[:8].upper()}",
-        "require_verified_id": False,
-        "require_trusted_by_advertiser": False,
+        "require_verified_id": "false",
+        "require_trusted_by_advertiser": "false",
     }
+
+    logger.debug(f"Noones offer/create payload: {payload}")
 
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             f"{BASE_URL}/offer/create",
             headers=await _headers(),
-            json=payload,
+            data=payload,  # form-encoded conforme docs Noones
         )
+        logger.debug(f"Noones HTTP status: {resp.status_code} | body: {resp.text[:300]}")
         resp.raise_for_status()
         dados = resp.json()
 
@@ -143,7 +148,7 @@ async def buscar_trades_oferta(oferta_id: str) -> list:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{BASE_URL}/trade/list",
-                headers=await _headers(),
+                headers=await _headers("application/json"),
                 params={"offer_hash": oferta_id, "page": 1},
             )
             resp.raise_for_status()
@@ -159,7 +164,7 @@ async def buscar_mensagens_trade(trade_id: str) -> list:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{BASE_URL}/trade/{trade_id}/chat",
-                headers=await _headers(),
+                headers=await _headers("application/json"),
             )
             resp.raise_for_status()
             return resp.json().get("data", {}).get("messages", [])
