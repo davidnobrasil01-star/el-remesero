@@ -146,27 +146,41 @@ async def cmd_noones_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(f"❌ Falha na autenticação: {e}")
         return
 
-    # 2. Testar criação de oferta com payload completo
-    await update.message.reply_text("🧪 Testando offer/create com payload completo...")
-    try:
-        resultado = await criar_oferta_venda(
-            valor_usdt=15.0,
-            numero_cartao_cup="9225-1234-5678-9012",
-            nome_titular="TEST USUARIO",
-            transacao_id=str(uuid.uuid4()),
-        )
-        await update.message.reply_text(
-            f"✅ <b>Oferta criada com sucesso!</b>\n"
-            f"ID: <code>{resultado['oferta_id']}</code>\n"
-            f"🔗 <a href='{resultado['link_oferta']}'>Ver oferta</a>\n\n"
-            f"⚠️ Lembre de desativar esta oferta de teste no Noones.",
-            parse_mode="HTML",
-        )
-    except Exception as e:
-        await update.message.reply_text(
-            f"❌ Falha ao criar oferta:\n<code>{e}</code>",
-            parse_mode="HTML",
-        )
+    import httpx
+    from payments.noones_client import _headers, BASE_URL
+
+    base = {
+        "crypto_currency_code": "USDT",
+        "currency": "USD",
+        "payment_method": "other-bank-transfer",
+        "offer_type_field": "sell",
+        "margin": "0",
+        "range_min": "10",
+        "range_max": "20",
+        "payment_window": "30",
+        "default_flow_type": "default",
+    }
+
+    # Teste A: mínimo + label
+    await update.message.reply_text("🧪 Teste A: mínimo + label...")
+    pa = {**base, "label": "Remessa #TESTTEST"}
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.post(f"{BASE_URL}/offer/create", headers=await _headers(), data=pa)
+    await update.message.reply_text(f"A → {r.status_code}: <code>{r.text[:200]}</code>", parse_mode="HTML")
+
+    # Teste B: mínimo + payment_details (texto simples sem \n)
+    await update.message.reply_text("🧪 Teste B: mínimo + payment_details simples...")
+    pb = {**base, "payment_details": "Pay via Transfermovil to card 9225-1234-5678-9012. Send screenshot after payment."}
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.post(f"{BASE_URL}/offer/create", headers=await _headers(), data=pb)
+    await update.message.reply_text(f"B → {r.status_code}: <code>{r.text[:200]}</code>", parse_mode="HTML")
+
+    # Teste C: mínimo + payment_details com \n (como no payload real)
+    await update.message.reply_text("🧪 Teste C: mínimo + payment_details com newlines...")
+    pc = {**base, "payment_details": "Pay via Transfermovil to card: 9225-1234-5678-9012\nAccount holder: TEST USER\nReference: ABCD1234\nSend screenshot after payment."}
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.post(f"{BASE_URL}/offer/create", headers=await _headers(), data=pc)
+    await update.message.reply_text(f"C → {r.status_code}: <code>{r.text[:200]}</code>", parse_mode="HTML")
 
 
 @apenas_admin
