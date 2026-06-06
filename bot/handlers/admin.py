@@ -95,7 +95,10 @@ async def cmd_entregar_manual(update: Update, context: ContextTypes.DEFAULT_TYPE
     sucesso = await entregar_transacao(transacao_id)
 
     if sucesso:
-        await update.message.reply_text(f"✅ Transação {transacao_id[:8].upper()} entregue com sucesso!")
+        await update.message.reply_text(
+            f"📨 Processo de entrega iniciado para {transacao_id[:8].upper()}.\n"
+            f"Se for modo manual, confirme a entrega clicando em ✅ Entregue! na notificação acima."
+        )
     else:
         await update.message.reply_text(f"❌ Falha na entrega da transação {transacao_id[:8].upper()}. Verifique os logs.")
 
