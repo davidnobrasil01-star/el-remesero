@@ -72,30 +72,48 @@ async def criar_oferta_venda(
     Cria uma oferta de venda de USDT no Noones P2P.
     O comprador pagará CUP via Transfermovil para o cartão especificado.
 
+    Campos confirmados pela API Noones:
+    - crypto_currency_code: "USDT" (criptomoeda que o vendedor oferece)
+    - currency: "USD"  (moeda fiat — Noones não suporta CUP/BRL)
+    - payment_method: "bank-transfer" (Transfermovil não existe como slug; usamos bank-transfer)
+    - payment_method_label: "Transfermovil CUP" (label livre para bank-transfer)
+    - offer_type_field: "sell" (não "type")
+
     Returns:
         dict com: oferta_id, link_oferta
     """
-    instrucoes = (
-        f"Envie via Transfermovil para o cartão: {numero_cartao_cup}\n"
-        f"Titular: {nome_titular}\n"
-        f"Referência: {transacao_id[:8].upper()}\n"
-        f"Após pagar, envie o comprovante neste chat."
+    instrucoes_pagamento = (
+        f"Realizze o pagamento via Transfermovil ao cartao: {numero_cartao_cup}\n"
+        f"Titular da conta: {nome_titular}\n"
+        f"Referencia da transferencia: {transacao_id[:8].upper()}\n"
+        f"Apos realizar o pagamento, envie o comprovante (screenshot) neste chat. "
+        f"O USDT sera liberado assim que o pagamento for confirmado. "
+        f"Prazo maximo para pagamento: 30 minutos."
+    )
+
+    termos_oferta = (
+        f"Venda de USDT com pagamento via Transfermovil (CUP). "
+        f"1. Voce recebera as instrucoes do cartao destino nas mensagens da negociacao. "
+        f"2. Realize a transferencia pelo app Transfermovil. "
+        f"3. Envie o comprovante de pagamento neste chat. "
+        f"4. O vendedor liberara o USDT apos verificar o pagamento. "
+        f"Nao cancele a negociacao antes do prazo. "
+        f"Em caso de duvidas, use o chat da negociacao."
     )
 
     payload = {
-        "currency": "USDT",
+        "crypto_currency_code": "USDT",
+        "currency": "USD",
         "payment_method": "bank-transfer",
         "payment_method_label": "Transfermovil CUP",
-        "type": "sell",
+        "offer_type_field": "sell",
         "margin": "0",
         "range_min": "1",
         "range_max": str(round(valor_usdt * 1.1, 2)),
         "payment_window": "30",
-        "payment_details": instrucoes,
-        "offer_terms": instrucoes,
+        "payment_details": instrucoes_pagamento,
+        "offer_terms": termos_oferta,
         "label": f"Remessa #{transacao_id[:8].upper()}",
-        "require_verified_id": "false",
-        "require_trusted_by_advertiser": "false",
     }
 
     logger.debug(f"Noones offer/create payload: {payload}")
@@ -127,204 +145,6 @@ async def criar_oferta_venda(
         "oferta_id": oferta_id,
         "link_oferta": f"https://noones.com/buy-usdt/{oferta_id}",
     }
-
-
-async def listar_metodos_pagamento(busca: str = "") -> list:
-    """
-    Lista todos os métodos de pagamento disponíveis no Noones.
-    Útil para descobrir o slug correto (ex: "transfermovil").
-    busca: se fornecido, filtra resultados que contenham essa string.
-    """
-    resultados = []
-    pagina = 1
-    async with httpx.AsyncClient(timeout=15) as client:
-        while True:
-            resp = await client.get(
-                f"{BASE_URL}/payment-method/list",
-                headers=await _headers("application/json"),
-                params={"page": pagina},
-            )
-            logger.debug(f"Noones payment-method/list p{pagina}: HTTP {resp.status_code} | {resp.text[:500]}")
-            if resp.status_code != 200:
-                break
-            dados = resp.json()
-            metodos = dados.get("data", {}).get("payment_methods", dados.get("data", []))
-            if not metodos:
-                break
-            for m in metodos:
-                if not busca or busca.lower() in str(m).lower():
-                    resultados.append(m)
-            # Próxima página
-            total_pages = dados.get("data", {}).get("page_count", 1)
-            if pagina >= total_pages:
-                break
-            pagina += 1
-    return resultados
-
-
-async def buscar_slug_por_palavra(palavra: str) -> list:
-    """
-    Busca el slug correcto probando diferentes rutas del endpoint payment-method.
-    Retorna lista de métodos que contienen la palabra buscada.
-    """
-    token = await _get_access_token()
-    headers_auth = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
-
-    rutas_candidatas = [
-        f"GET {BASE_URL}/payment-method/list",
-        f"GET {BASE_URL}/payment-methods",
-        f"GET {BASE_URL}/payment-method",
-        f"GET {BASE_URL}/offer/payment-methods",
-        f"POST {BASE_URL}/payment-method/list",
-    ]
-
-    resultados = []
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        for ruta in rutas_candidatas:
-            metodo_http, url = ruta.split(" ", 1)
-            try:
-                if metodo_http == "GET":
-                    resp = await client.get(url, headers=headers_auth, params={"page": 1})
-                else:
-                    resp = await client.post(url, headers=headers_auth, json={"page": 1})
-                logger.info(f"payment-method probe [{ruta}]: {resp.status_code} | {resp.text[:400]}")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    metodos = (
-                        data.get("data", {}).get("payment_methods") or
-                        data.get("data", []) or
-                        data.get("payment_methods", [])
-                    )
-                    for m in metodos:
-                        slug = m.get("slug") or m.get("code") or m.get("id") or ""
-                        nome = m.get("name") or m.get("label") or ""
-                        if palavra.lower() in (str(slug) + str(nome)).lower():
-                            resultados.append({"ruta": ruta, "slug": slug, "nome": nome, "raw": str(m)[:200]})
-                    if metodos:
-                        # Encontrou métodos — retorna todos que matcham
-                        return resultados or [{"ruta": ruta, "total": len(metodos), "primeiros": str(metodos[:5])}]
-            except Exception as e:
-                logger.debug(f"Erro probe {ruta}: {e}")
-    return resultados
-
-
-async def testar_urls_base() -> dict:
-    """
-    Testa diferentes base URLs do Noones para encontrar a correta.
-    Usa o endpoint GET /payment-method/list como sonda.
-    """
-    token = await _get_access_token()
-    headers_auth = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
-
-    urls_candidatas = [
-        ("api.noones.com/api/noones/v1", "https://api.noones.com/api/noones/v1/payment-method/list"),
-        ("api.noones.com/noones/v1",     "https://api.noones.com/noones/v1/payment-method/list"),
-        ("api.noones.com/v1",            "https://api.noones.com/v1/payment-method/list"),
-        ("noones.com/api/noones/v1",     "https://noones.com/api/noones/v1/payment-method/list"),
-        ("noones.com/api/v1",            "https://noones.com/api/v1/payment-method/list"),
-    ]
-
-    resultados = {}
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        for nome, url in urls_candidatas:
-            try:
-                resp = await client.get(url, headers=headers_auth)
-                resultados[nome] = {
-                    "http_status": resp.status_code,
-                    "body": resp.text[:300],
-                }
-                logger.info(f"URL probe [{nome}]: {resp.status_code} | {resp.text[:200]}")
-            except Exception as e:
-                resultados[nome] = {"erro": str(e)}
-
-    return resultados
-
-
-async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
-    """
-    Prueba el payload correcto con bank-transfer + Transfermovil CUP label.
-    También prueba offer_type_field vs type para confirmar el campo correcto.
-    """
-    oferta_terms_texto = (
-        "Pague via Transfermovil ao cartao especificado nas instrucoes. "
-        "Envie o comprovante de pagamento neste chat apos realizar a transferencia. "
-        "O USDT sera liberado apos confirmacao do pagamento. Prazo maximo 30 minutos."
-    )
-    oferta_details_texto = (
-        "1. Realize a transferencia via Transfermovil para o cartao indicado. "
-        "2. Tire um screenshot do comprovante. "
-        "3. Envie o comprovante neste chat. "
-        "4. Aguarde a liberacao do USDT."
-    )
-
-    casos = {
-        # Melhor candidato: USD + offer_type_field + vendor_terms variações
-        "B1_vendor_terms_true": {
-            "crypto_currency_code": "USDT",
-            "currency": "USD",
-            "payment_method": "bank-transfer",
-            "payment_method_label": "Transfermovil CUP",
-            "offer_type_field": "sell",
-            "vendor_terms": "true",
-            "margin": "0",
-            "range_min": "1",
-            "range_max": str(round(valor_usdt * 1.1, 2)),
-            "payment_window": "30",
-            "payment_details": oferta_details_texto,
-            "offer_terms": oferta_terms_texto,
-        },
-        "B2_vendor_terms_1_int": {
-            "crypto_currency_code": "USDT",
-            "currency": "USD",
-            "payment_method": "bank-transfer",
-            "payment_method_label": "Transfermovil CUP",
-            "offer_type_field": "sell",
-            "vendor_terms": 1,
-            "margin": "0",
-            "range_min": "1",
-            "range_max": str(round(valor_usdt * 1.1, 2)),
-            "payment_window": "30",
-            "payment_details": oferta_details_texto,
-            "offer_terms": oferta_terms_texto,
-        },
-        "B3_sem_vendor_terms": {
-            "crypto_currency_code": "USDT",
-            "currency": "USD",
-            "payment_method": "bank-transfer",
-            "payment_method_label": "Transfermovil CUP",
-            "offer_type_field": "sell",
-            "margin": "0",
-            "range_min": "1",
-            "range_max": str(round(valor_usdt * 1.1, 2)),
-            "payment_window": "30",
-            "payment_details": oferta_details_texto,
-            "offer_terms": oferta_terms_texto,
-        },
-    }
-
-    resultados = {}
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-        for nome, payload in casos.items():
-            try:
-                resp = await client.post(
-                    f"{BASE_URL}/offer/create",
-                    headers=await _headers(),
-                    data=payload,
-                )
-                body = resp.text[:400]
-                resultados[nome] = {"http_status": resp.status_code, "body": body}
-                logger.info(f"Offer test [{nome}]: HTTP {resp.status_code} | {body}")
-            except Exception as e:
-                resultados[nome] = {"http_status": "ERR", "body": str(e)}
-
-    return resultados
 
 
 async def desativar_oferta(oferta_id: str) -> bool:

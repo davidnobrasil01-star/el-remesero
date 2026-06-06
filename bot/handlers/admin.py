@@ -127,61 +127,46 @@ async def cmd_revisao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 @apenas_admin
 async def cmd_noones_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Diagnóstico Noones: lista métodos de pagamento e testa criar oferta.
-    Uso: /admin_noones_debug [busca]  (ex: /admin_noones_debug transfer)
+    Diagnóstico Noones: testa autenticação e criação de oferta.
+    Uso: /admin_noones_debug
     """
-    busca = " ".join(context.args) if context.args else "transfer"
-    await update.message.reply_text(
-        f"🔍 Buscando métodos Noones com '{busca}'..."
-    )
+    await update.message.reply_text("🔍 Testando conexão com Noones API...")
 
-    from payments.noones_client import listar_metodos_pagamento, testar_criar_oferta_debug, testar_urls_base, buscar_slug_por_palavra
+    from payments.noones_client import _get_access_token, criar_oferta_venda
+    import uuid
 
-    # 1. Buscar slug correto
+    # 1. Testar autenticação
     try:
-        metodos = await buscar_slug_por_palavra(busca)
-        if metodos:
-            linhas = [f"💳 <b>Métodos Noones com '{busca}':</b>\n"]
-            for m in metodos[:10]:
-                slug = m.get("slug", "")
-                nome = m.get("nome", "")
-                raw = m.get("raw", "")
-                ruta = m.get("ruta", "")
-                linhas.append(f"✅ <code>{slug}</code> — {nome}\n<i>{ruta}</i>\n{raw[:100]}")
-            await update.message.reply_text("\n".join(linhas)[:4000], parse_mode="HTML")
-        else:
-            await update.message.reply_text(
-                f"⚠️ Slug '{busca}' não encontrado. Ver logs Railway para detalhes das rotas testadas."
-            )
+        token = await _get_access_token()
+        await update.message.reply_text(
+            f"✅ <b>Auth OK</b> — token obtido: <code>{token[:20]}...</code>",
+            parse_mode="HTML",
+        )
     except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao buscar slug: {e}")
+        await update.message.reply_text(f"❌ Falha na autenticação: {e}")
+        return
 
-    # 2. Testar URLs base
-    await update.message.reply_text("🧪 Testando 5 URLs base do Noones...")
+    # 2. Testar criação de oferta (modo dry-run com ID de teste)
+    await update.message.reply_text("🧪 Testando offer/create com payload correto...")
     try:
-        # ya importado arriba
-        urls_res = await testar_urls_base()
-        linhas = ["🔗 <b>Sonda de URLs (payment-method/list):</b>\n"]
-        for nome, res in urls_res.items():
-            status = res.get("http_status", "ERR")
-            body = res.get("body", res.get("erro", ""))[:150]
-            linhas.append(f"<b>{nome}</b>: HTTP {status}\n<code>{body}</code>\n")
-        await update.message.reply_text("\n".join(linhas)[:4000], parse_mode="HTML")
+        resultado = await criar_oferta_venda(
+            valor_usdt=5.0,
+            numero_cartao_cup="9225-1234-5678-9012",
+            nome_titular="TEST USUARIO",
+            transacao_id=str(uuid.uuid4()),
+        )
+        await update.message.reply_text(
+            f"✅ <b>Oferta criada com sucesso!</b>\n"
+            f"ID: <code>{resultado['oferta_id']}</code>\n"
+            f"🔗 <a href='{resultado['link_oferta']}'>Ver oferta</a>\n\n"
+            f"⚠️ Lembre de desativar esta oferta de teste no Noones.",
+            parse_mode="HTML",
+        )
     except Exception as e:
-        await update.message.reply_text(f"❌ Erro no teste URL: {e}")
-
-    # 3. Testar criação de oferta
-    await update.message.reply_text("🧪 Testando offer/create em 3 URLs...")
-    try:
-        resultados = await testar_criar_oferta_debug(valor_usdt=5.0)
-        linhas = ["📊 <b>Resultados offer/create:</b>\n"]
-        for nome, res in resultados.items():
-            status = res.get("http_status", "ERR")
-            body = res.get("body", res.get("erro", ""))[:200]
-            linhas.append(f"<b>{nome}</b>:\nHTTP {status} | <code>{body}</code>\n")
-        await update.message.reply_text("\n".join(linhas)[:4000], parse_mode="HTML")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erro no teste oferta: {e}")
+        await update.message.reply_text(
+            f"❌ Falha ao criar oferta:\n<code>{e}</code>",
+            parse_mode="HTML",
+        )
 
 
 @apenas_admin
