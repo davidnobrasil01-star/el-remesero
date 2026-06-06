@@ -252,50 +252,60 @@ async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
     Prueba el payload correcto con bank-transfer + Transfermovil CUP label.
     También prueba offer_type_field vs type para confirmar el campo correcto.
     """
+    oferta_terms_texto = (
+        "Pague via Transfermovil ao cartao especificado nas instrucoes. "
+        "Envie o comprovante de pagamento neste chat apos realizar a transferencia. "
+        "O USDT sera liberado apos confirmacao do pagamento. Prazo maximo 30 minutos."
+    )
+    oferta_details_texto = (
+        "1. Realize a transferencia via Transfermovil para o cartao indicado. "
+        "2. Tire um screenshot do comprovante. "
+        "3. Envie o comprovante neste chat. "
+        "4. Aguarde a liberacao do USDT."
+    )
+
     casos = {
-        # crypto_currency_code + fiat CUP + offer_type_field
-        "A_crypto_code_fiat_cup": {
-            "crypto_currency_code": "USDT",
-            "currency": "CUP",
-            "payment_method": "bank-transfer",
-            "payment_method_label": "Transfermovil CUP",
-            "offer_type_field": "sell",
-            "vendor_terms": "1",
-            "margin": "0",
-            "range_min": "1",
-            "range_max": str(round(valor_usdt * 1.1, 2)),
-            "payment_window": "30",
-            "payment_details": "DIAGNÓSTICO",
-            "offer_terms": "DIAGNÓSTICO",
-        },
-        # crypto_currency_code + fiat USD + offer_type_field
-        "B_crypto_code_fiat_usd": {
+        # Melhor candidato: USD + offer_type_field + vendor_terms variações
+        "B1_vendor_terms_true": {
             "crypto_currency_code": "USDT",
             "currency": "USD",
             "payment_method": "bank-transfer",
             "payment_method_label": "Transfermovil CUP",
             "offer_type_field": "sell",
-            "vendor_terms": "1",
+            "vendor_terms": "true",
             "margin": "0",
             "range_min": "1",
             "range_max": str(round(valor_usdt * 1.1, 2)),
             "payment_window": "30",
-            "payment_details": "DIAGNÓSTICO",
-            "offer_terms": "DIAGNÓSTICO",
+            "payment_details": oferta_details_texto,
+            "offer_terms": oferta_terms_texto,
         },
-        # só offer_type_field sem currency (ver se aceita)
-        "C_sem_currency": {
+        "B2_vendor_terms_1_int": {
             "crypto_currency_code": "USDT",
+            "currency": "USD",
             "payment_method": "bank-transfer",
             "payment_method_label": "Transfermovil CUP",
             "offer_type_field": "sell",
-            "vendor_terms": "1",
+            "vendor_terms": 1,
             "margin": "0",
             "range_min": "1",
             "range_max": str(round(valor_usdt * 1.1, 2)),
             "payment_window": "30",
-            "payment_details": "DIAGNÓSTICO",
-            "offer_terms": "DIAGNÓSTICO",
+            "payment_details": oferta_details_texto,
+            "offer_terms": oferta_terms_texto,
+        },
+        "B3_sem_vendor_terms": {
+            "crypto_currency_code": "USDT",
+            "currency": "USD",
+            "payment_method": "bank-transfer",
+            "payment_method_label": "Transfermovil CUP",
+            "offer_type_field": "sell",
+            "margin": "0",
+            "range_min": "1",
+            "range_max": str(round(valor_usdt * 1.1, 2)),
+            "payment_window": "30",
+            "payment_details": oferta_details_texto,
+            "offer_terms": oferta_terms_texto,
         },
     }
 
