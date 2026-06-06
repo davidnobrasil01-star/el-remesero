@@ -128,6 +128,102 @@ async def criar_oferta_venda(
     }
 
 
+async def listar_metodos_pagamento(busca: str = "") -> list:
+    """
+    Lista todos os métodos de pagamento disponíveis no Noones.
+    Útil para descobrir o slug correto (ex: "transfermovil").
+    busca: se fornecido, filtra resultados que contenham essa string.
+    """
+    resultados = []
+    pagina = 1
+    async with httpx.AsyncClient(timeout=15) as client:
+        while True:
+            resp = await client.get(
+                f"{BASE_URL}/payment-method/list",
+                headers=await _headers("application/json"),
+                params={"page": pagina},
+            )
+            logger.debug(f"Noones payment-method/list p{pagina}: HTTP {resp.status_code} | {resp.text[:500]}")
+            if resp.status_code != 200:
+                break
+            dados = resp.json()
+            metodos = dados.get("data", {}).get("payment_methods", dados.get("data", []))
+            if not metodos:
+                break
+            for m in metodos:
+                if not busca or busca.lower() in str(m).lower():
+                    resultados.append(m)
+            # Próxima página
+            total_pages = dados.get("data", {}).get("page_count", 1)
+            if pagina >= total_pages:
+                break
+            pagina += 1
+    return resultados
+
+
+async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
+    """
+    Testa diferentes variações do payload de criação de oferta.
+    Retorna um dict com os resultados de cada tentativa.
+    """
+    resultados = {}
+
+    # Variações a testar
+    variacoes = [
+        ("transfermovil_form", {
+            "currency": "USDT",
+            "payment_method": "transfermovil",
+            "type": "sell",
+            "margin": "0",
+            "range_min": "1",
+            "range_max": str(round(valor_usdt * 1.1, 2)),
+            "payment_window": "30",
+            "payment_details": "teste",
+            "offer_terms": "teste",
+        }),
+        ("transfermovil_offer_type_field", {
+            "currency": "USDT",
+            "payment_method": "transfermovil",
+            "offer_type_field": "sell",
+            "margin": "0",
+            "range_min": "1",
+            "range_max": str(round(valor_usdt * 1.1, 2)),
+            "payment_window": "30",
+            "payment_details": "teste",
+            "offer_terms": "teste",
+        }),
+        ("bank_transfer_test", {
+            "currency": "USDT",
+            "payment_method": "bank-transfer",
+            "type": "sell",
+            "margin": "0",
+            "range_min": "1",
+            "range_max": str(round(valor_usdt * 1.1, 2)),
+            "payment_window": "30",
+            "payment_details": "teste",
+            "offer_terms": "teste",
+        }),
+    ]
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        for nome, payload in variacoes:
+            try:
+                resp = await client.post(
+                    f"{BASE_URL}/offer/create",
+                    headers=await _headers(),
+                    data=payload,
+                )
+                resultados[nome] = {
+                    "http_status": resp.status_code,
+                    "body": resp.text[:400],
+                }
+                logger.info(f"Debug offer/create [{nome}]: {resp.status_code} | {resp.text[:300]}")
+            except Exception as e:
+                resultados[nome] = {"erro": str(e)}
+
+    return resultados
+
+
 async def desativar_oferta(oferta_id: str) -> bool:
     """Desativa uma oferta após ser completada ou cancelada."""
     try:

@@ -43,6 +43,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/admin_entregar [id] — Entregar transação manualmente\n"
         "/admin_bloquear [telegram_id] — Bloquear usuário\n"
         "/admin_revisao — Listar transações em revisão manual\n"
+        "/admin_noones_debug [busca] — Diagnosticar API Noones\n"
     )
     await update.message.reply_text(texto, parse_mode="HTML")
 
@@ -121,6 +122,51 @@ async def cmd_revisao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"  <i>{t.get('observacoes', 'sem detalhes')[:80]}</i>"
         )
     await update.message.reply_text("\n".join(linhas), parse_mode="HTML")
+
+
+@apenas_admin
+async def cmd_noones_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Diagnóstico Noones: lista métodos de pagamento e testa criar oferta.
+    Uso: /admin_noones_debug [busca]  (ex: /admin_noones_debug transfer)
+    """
+    busca = " ".join(context.args) if context.args else "transfer"
+    await update.message.reply_text(
+        f"🔍 Buscando métodos Noones com '{busca}'..."
+    )
+
+    from payments.noones_client import listar_metodos_pagamento, testar_criar_oferta_debug
+
+    # 1. Listar métodos de pagamento
+    try:
+        metodos = await listar_metodos_pagamento(busca)
+        if metodos:
+            linhas = [f"💳 <b>Métodos Noones contendo '{busca}':</b>\n"]
+            for m in metodos[:20]:
+                slug = m.get("slug") or m.get("code") or m.get("id") or str(m)
+                nome = m.get("name") or m.get("label") or ""
+                linhas.append(f"• <code>{slug}</code> — {nome}")
+            await update.message.reply_text("\n".join(linhas), parse_mode="HTML")
+        else:
+            await update.message.reply_text(
+                f"⚠️ Nenhum método encontrado com '{busca}'. "
+                f"Veja os logs do Railway para a lista completa."
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao listar métodos: {e}")
+
+    # 2. Testar criação de oferta
+    await update.message.reply_text("🧪 Testando criação de oferta (3 variações)...")
+    try:
+        resultados = await testar_criar_oferta_debug(valor_usdt=5.0)
+        linhas = ["📊 <b>Resultados dos testes offer/create:</b>\n"]
+        for nome, res in resultados.items():
+            status = res.get("http_status", "ERR")
+            body = res.get("body", res.get("erro", ""))[:200]
+            linhas.append(f"<b>{nome}</b>:\nHTTP {status} | {body}\n")
+        await update.message.reply_text("\n".join(linhas)[:4000], parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro no teste: {e}")
 
 
 @apenas_admin
