@@ -20,16 +20,41 @@ def _verificar_assinatura(payload_raw: bytes, assinatura: str) -> bool:
     return hmac.compare_digest(esperada, assinatura)
 
 
+def _responder_challenge(request: Request) -> Response | None:
+    """
+    Noones valida o webhook com X-Noones-Request-Challenge.
+    O servidor deve ecoar o valor desse header de volta na resposta.
+    Se o header não estiver presente, retorna None (sem challenge).
+    """
+    challenge = request.headers.get("x-noones-request-challenge", "")
+    if challenge:
+        logger.info(f"Webhook Noones: challenge recebido, ecoando de volta: {challenge[:20]}...")
+        return Response(
+            content=challenge,
+            status_code=200,
+            headers={"X-Noones-Request-Challenge": challenge},
+        )
+    return None
+
+
 @router.get("/webhooks/noones")
 async def verificar_noones(request: Request) -> Response:
-    """Endpoint de verificação GET — Noones pinga aqui para validar a URL."""
-    logger.info("Webhook Noones: verificação GET recebida")
+    """Endpoint de verificação GET — responde ao challenge do Noones."""
+    logger.info(f"Webhook Noones: GET recebido — headers: {dict(request.headers)}")
+    resp = _responder_challenge(request)
+    if resp:
+        return resp
     return Response(status_code=200)
 
 
 @router.post("/webhooks/noones")
 async def receber_noones(request: Request) -> Response:
     """Recebe eventos do Noones P2P."""
+    # Challenge-response: Noones valida a URL ecoando o header de volta
+    resp = _responder_challenge(request)
+    if resp:
+        return resp
+
     payload_raw = await request.body()
     assinatura = request.headers.get("x-noones-signature", "")
 
