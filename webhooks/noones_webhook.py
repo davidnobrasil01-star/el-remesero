@@ -20,6 +20,13 @@ def _verificar_assinatura(payload_raw: bytes, assinatura: str) -> bool:
     return hmac.compare_digest(esperada, assinatura)
 
 
+@router.get("/webhooks/noones")
+async def verificar_noones(request: Request) -> Response:
+    """Endpoint de verificação GET — Noones pinga aqui para validar a URL."""
+    logger.info("Webhook Noones: verificação GET recebida")
+    return Response(status_code=200)
+
+
 @router.post("/webhooks/noones")
 async def receber_noones(request: Request) -> Response:
     """Recebe eventos do Noones P2P."""
@@ -31,16 +38,28 @@ async def receber_noones(request: Request) -> Response:
         logger.warning("Webhook Noones: assinatura inválida")
         raise HTTPException(status_code=400, detail="Assinatura inválida")
 
+    # Corpo vazio ou não-JSON (ping de verificação) → retorna 200
+    if not payload_raw or payload_raw.strip() in (b"", b"{}", b"[]"):
+        return Response(status_code=200)
+
     try:
         payload = json.loads(payload_raw)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="JSON inválido")
+        logger.warning(f"Webhook Noones: body não é JSON: {payload_raw[:100]}")
+        return Response(status_code=200)
 
     evento = payload.get("type", "")
     logger.info(f"Webhook Noones: {evento}")
 
+    # Trade aberto → envia instruções imediatamente (sem esperar o monitor de 5 min)
+    if evento == "trade.started":
+        trade_id = payload.get("trade", {}).get("trade_hash", "")
+        if trade_id:
+            from services.noones_service import processar_trade_iniciado
+            await processar_trade_iniciado(trade_id, payload)
+
     # Comprador marcou como pago → encaminhar comprovante ao admin
-    if evento in ("trade.paid", "trade_payment_proof"):
+    elif evento in ("trade.paid", "trade_payment_proof"):
         trade_id = payload.get("trade", {}).get("trade_hash", "")
         if trade_id:
             from services.noones_service import processar_comprovante_noones

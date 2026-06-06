@@ -140,6 +140,46 @@ def _extrair_trade_hash(valor: str) -> str:
     return valor or ""
 
 
+async def processar_trade_iniciado(trade_id: str, payload: dict) -> None:
+    """
+    Quando trade.started chega via webhook: encontra a transação pelo offer_hash,
+    envia instruções de pagamento no chat imediatamente, atualiza noones_trade_id.
+    """
+    sb = get_supabase()
+
+    # Busca offer_hash via API Noones
+    offer_hash = await buscar_oferta_do_trade(trade_id)
+    if not offer_hash:
+        logger.warning(f"trade.started: não conseguiu offer_hash para trade {trade_id}")
+        return
+
+    res = sb.table("transacoes").select("*").eq("noones_trade_id", offer_hash).execute()
+    if not res or not res.data:
+        logger.warning(f"trade.started: nenhuma transação com offer_hash={offer_hash}")
+        return
+
+    transacao_data = res.data[0]
+    transacao_id = transacao_data["id"]
+
+    # Atualiza noones_trade_id com o trade_hash real
+    sb.table("transacoes").update({
+        "noones_trade_id": f"trade_{trade_id}"
+    }).eq("id", transacao_id).execute()
+
+    # Envia instruções de pagamento no chat do trade
+    dest_res = sb.table("destinatarios").select("*").eq(
+        "id", transacao_data["destinatario_id"]
+    ).execute()
+    if dest_res and dest_res.data:
+        instrucoes = _texto_instrucoes(
+            numero_cartao_cup=dest_res.data[0].get("numero_cartao", ""),
+            nome_titular=dest_res.data[0]["nome_completo"],
+            transacao_id=transacao_id,
+        )
+        await enviar_instrucoes_trade(trade_id, instrucoes)
+        logger.info(f"trade.started: instruções enviadas para trade {trade_id}")
+
+
 async def aprovar_trade(transacao_id: str) -> bool:
     """Admin aprovou — libera USDT no Noones e notifica cliente."""
     sb = get_supabase()
