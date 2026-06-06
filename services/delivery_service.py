@@ -140,11 +140,22 @@ async def _entregar_automatico(transacao_id: str) -> bool:
         "metodo_entrega": metodo,
     })
 
+    # ── Etapa 1: comprar USDT na exchange ─────────────────────────────────────
     try:
         exchange, exchange_nome = _exchange_client()
         compra = await exchange.comprar_usdt(transacao.valor_brl)
         logger.info(f"[{exchange_nome}] USDT comprado: {compra['usdt_comprado']} para {transacao_id}")
+    except Exception as e:
+        # Falha na compra (ex.: saldo insuficiente, credenciais inválidas).
+        # Não adianta repetir — vai para modo manual imediatamente.
+        logger.error(
+            f"Erro ao comprar USDT para {transacao_id}: {e} — "
+            f"usando entrega manual"
+        )
+        return await _entregar_manual(transacao_id)
 
+    # ── Etapa 2: entregar via gateway ──────────────────────────────────────────
+    try:
         if metodo == "mlc" and settings.tropipay_client_id:
             return await _entregar_tropipay(transacao_id, transacao, destinatario, compra)
         elif metodo == "cup" and settings.noones_api_key:
