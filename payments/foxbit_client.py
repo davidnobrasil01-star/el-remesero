@@ -67,12 +67,19 @@ def _extrair_preco(dados: dict) -> float:
 # ── Endpoints Públicos ────────────────────────────────────────────────────────
 
 async def _obter_ticker(par: str) -> dict:
-    """Busca ticker 24h de um par da Foxbit."""
+    """Busca ticker 24h de um par da Foxbit.
+    Resposta: {"data": [{market_symbol, last_trade, rolling_24h, best}]}
+    """
     url = f"{BASE_URL}/rest/v3/markets/{par}/ticker/24hr"
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url)
         resp.raise_for_status()
-    return resp.json()
+    resposta = resp.json()
+    # Desempacota o array "data" retornado pela API
+    dados = resposta.get("data", [])
+    if isinstance(dados, list) and dados:
+        return dados[0]
+    return resposta
 
 
 async def obter_preco_btc_brl() -> float:
