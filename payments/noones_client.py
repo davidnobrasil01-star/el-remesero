@@ -104,7 +104,17 @@ async def criar_oferta_venda(
         resp.raise_for_status()
         dados = resp.json()
 
+    logger.debug(f"Noones offer/create resposta: {dados}")
+
+    # Verifica status da resposta (Noones usa status no corpo, não só HTTP)
+    if dados.get("status") != "success":
+        erros = dados.get("errors") or dados.get("error") or dados
+        raise RuntimeError(f"Noones recusou a oferta: {erros}")
+
     oferta_id = str(dados.get("data", {}).get("offer_hash", ""))
+    if not oferta_id:
+        raise RuntimeError(f"Noones não retornou offer_hash. Resposta: {dados}")
+
     logger.info(f"Noones oferta criada: {oferta_id} | {valor_usdt} USDT")
 
     return {
