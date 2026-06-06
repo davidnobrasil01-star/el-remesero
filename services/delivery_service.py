@@ -129,7 +129,13 @@ async def falhar_entrega_manual(transacao_id: str) -> None:
 # ── Modo Automático ───────────────────────────────────────────────────────────
 
 async def _entregar_automatico(transacao_id: str) -> bool:
-    """Entrega automática via MB/Binance + TropiPay/Noones."""
+    """
+    Entrega automática via Noones/TropiPay.
+
+    O valor USDT já foi calculado na cotação (transacao.valor_usdt).
+    A compra na exchange (Foxbit) é opcional — serve apenas para repor o
+    float de USDT; a entrega ao cliente NÃO depende dela.
+    """
     transacao = transacao_repo.buscar_por_id(transacao_id)
     destinatario = destinatario_repo.buscar_por_id(str(transacao.destinatario_id))
     metodo = destinatario.metodo_entrega or "mlc"
@@ -140,33 +146,38 @@ async def _entregar_automatico(transacao_id: str) -> bool:
         "metodo_entrega": metodo,
     })
 
-    # ── Etapa 1: comprar USDT na exchange ─────────────────────────────────────
+    # Usa valor_usdt calculado na cotação como base de entrega.
+    # A compra na exchange é tentada para repor o float — se falhar, apenas
+    # loga o aviso e segue com o valor da cotação.
+    valor_usdt_cotacao = float(transacao.valor_usdt or 0)
+    compra = {"usdt_comprado": valor_usdt_cotacao}
+
     try:
         exchange, exchange_nome = _exchange_client()
-        compra = await exchange.comprar_usdt(transacao.valor_brl)
-        logger.info(f"[{exchange_nome}] USDT comprado: {compra['usdt_comprado']} para {transacao_id}")
-    except Exception as e:
-        # Falha na compra (ex.: saldo insuficiente, credenciais inválidas).
-        # Não adianta repetir — vai para modo manual imediatamente.
-        logger.error(
-            f"Erro ao comprar USDT para {transacao_id}: {e} — "
-            f"usando entrega manual"
+        resultado = await exchange.comprar_usdt(transacao.valor_brl)
+        compra = resultado
+        logger.info(
+            f"[{exchange_nome}] USDT comprado: {compra['usdt_comprado']:.4f} "
+            f"para {transacao_id}"
         )
-        return await _entregar_manual(transacao_id)
+    except Exception as e:
+        logger.warning(
+            f"Compra na exchange falhou ({e}) — "
+            f"usando valor_usdt da cotação ({valor_usdt_cotacao:.4f} USDT)"
+        )
 
-    # ── Etapa 2: entregar via gateway ──────────────────────────────────────────
+    # ── Entregar via gateway ──────────────────────────────────────────────────
     try:
         if metodo == "mlc" and settings.tropipay_client_id:
             return await _entregar_tropipay(transacao_id, transacao, destinatario, compra)
         elif metodo == "cup" and settings.noones_api_key:
             return await _entregar_noones_cup(transacao_id, transacao, destinatario, compra)
         else:
-            # Fallback para manual
-            logger.warning(f"Automático sem gateway para '{metodo}', usando manual")
+            logger.warning(f"Sem gateway para '{metodo}', usando entrega manual")
             return await _entregar_manual(transacao_id)
 
     except Exception as e:
-        logger.error(f"Erro na entrega automática {transacao_id} tentativa {tentativa}: {e}")
+        logger.error(f"Erro no gateway de entrega {transacao_id} tentativa {tentativa}: {e}")
         await _tratar_falha(transacao_id, tentativa, str(e))
         return False
 
