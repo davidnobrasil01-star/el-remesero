@@ -37,7 +37,7 @@ def _verificar_assinatura_mp(request: Request, payload_raw: bytes) -> bool:
     x_request_id = request.headers.get("x-request-id", "")
 
     # Parsear ts e v1 do header x-signature
-    parts = dict(p.split("=", 1) for p in x_signature.split("&") if "=" in p)
+    parts = dict(p.split("=", 1) for p in x_signature.split(",") if "=" in p)
     ts = parts.get("ts", "")
     v1 = parts.get("v1", "")
 
