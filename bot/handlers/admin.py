@@ -40,7 +40,8 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🛠️ <b>Painel Admin — El Remesero</b>\n\n"
         "Comandos disponíveis:\n"
         "/admin_stats — Estatísticas gerais\n"
-        "/admin_entregar [id] — Entregar transação manualmente\n"
+        "/admin_entregar [id] — Retentar entrega (automático ou manual)\n"
+        "/admin_forcar_manual [id] — Forçar entrega MANUAL (bypass Noones)\n"
         "/admin_bloquear [telegram_id] — Bloquear usuário\n"
         "/admin_revisao — Listar transações em revisão manual\n"
         "/admin_noones_debug — Diagnosticar API Noones\n"
@@ -86,23 +87,56 @@ async def cmd_entregar_manual(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(f"❌ Transação {transacao_id} não encontrada.")
         return
 
-    logger.info(f"Admin: entrega manual da transação {transacao_id}")
+    logger.info(f"Admin: entrega (re)tentada para transação {transacao_id}")
     transacao_repo.atualizar_status(
         transacao_id,
         StatusTransacao.PIX_CONFIRMADO,
         {"tentativas_entrega": 0},
     )
 
+    await update.message.reply_text(f"⏳ Iniciando entrega de {transacao_id[:8].upper()}...")
+
     from services.delivery_service import entregar_transacao
-    sucesso = await entregar_transacao(transacao_id)
+    import asyncio
+    # Dispara em background para não travar o bot durante retries
+    asyncio.create_task(entregar_transacao(transacao_id))
+
+
+@apenas_admin
+async def cmd_forcar_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Força entrega MANUAL de uma transação — ignora Noones/TropiPay.
+    Útil quando o valor é muito baixo para Noones (< $10 USD).
+    Uso: /admin_forcar_manual [transacao_id]
+    """
+    if not context.args:
+        await update.message.reply_text("Uso: /admin_forcar_manual [transacao_id]")
+        return
+
+    transacao_id = context.args[0]
+    transacao = transacao_repo.buscar_por_id(transacao_id)
+
+    if not transacao:
+        await update.message.reply_text(f"❌ Transação {transacao_id} não encontrada.")
+        return
+
+    logger.info(f"Admin: forçando entrega manual para {transacao_id}")
+    transacao_repo.atualizar_status(
+        transacao_id,
+        StatusTransacao.PIX_CONFIRMADO,
+        {"tentativas_entrega": 0},
+    )
+
+    from services.delivery_service import _entregar_manual
+    sucesso = await _entregar_manual(transacao_id)
 
     if sucesso:
         await update.message.reply_text(
-            f"📨 Processo de entrega iniciado para {transacao_id[:8].upper()}.\n"
-            f"Se for modo manual, confirme a entrega clicando em ✅ Entregue! na notificação acima."
+            f"📨 Entrega manual iniciada para {transacao_id[:8].upper()}.\n"
+            f"Confirme clicando em ✅ Entregue! na notificação acima."
         )
     else:
-        await update.message.reply_text(f"❌ Falha na entrega da transação {transacao_id[:8].upper()}. Verifique os logs.")
+        await update.message.reply_text(f"❌ Erro ao iniciar entrega manual de {transacao_id[:8].upper()}.")
 
 
 @apenas_admin

@@ -210,11 +210,23 @@ async def _entregar_tropipay(transacao_id, transacao, destinatario, compra) -> b
     return True
 
 
+NOONES_MINIMO_USDT = 10.0  # Noones exige range_min >= $10 USD
+
+
 async def _entregar_noones_cup(transacao_id, transacao, destinatario, compra) -> bool:
     from payments.noones_client import criar_oferta_venda
     from services.notificacao_service import _bot_app
 
     valor_usdt = transacao.valor_usdt or compra["usdt_comprado"]
+
+    # Noones exige mínimo de $10 USD por oferta — abaixo disso usa entrega manual
+    if valor_usdt < NOONES_MINIMO_USDT:
+        logger.warning(
+            f"USDT {valor_usdt:.4f} abaixo do mínimo Noones ({NOONES_MINIMO_USDT} USD) "
+            f"— usando entrega manual para {transacao_id}"
+        )
+        return await _entregar_manual(transacao_id)
+
     resultado = await criar_oferta_venda(
         valor_usdt=valor_usdt,
         numero_cartao_cup=destinatario.numero_cartao,

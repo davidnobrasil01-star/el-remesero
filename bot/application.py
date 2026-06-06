@@ -15,6 +15,7 @@ from bot.handlers.admin import (
     cmd_admin,
     cmd_stats,
     cmd_entregar_manual,
+    cmd_forcar_manual,
     cmd_revisao,
     cmd_bloquear,
     cmd_noones_debug,
@@ -42,6 +43,7 @@ def criar_application() -> Application:
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CommandHandler("admin_stats", cmd_stats))
     app.add_handler(CommandHandler("admin_entregar", cmd_entregar_manual))
+    app.add_handler(CommandHandler("admin_forcar_manual", cmd_forcar_manual))
     app.add_handler(CommandHandler("admin_revisao", cmd_revisao))
     app.add_handler(CommandHandler("admin_bloquear", cmd_bloquear))
     app.add_handler(CommandHandler("admin_noones_debug", cmd_noones_debug))
