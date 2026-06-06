@@ -92,26 +92,22 @@ async def criar_oferta_venda(
     )
 
     # range_min mínimo é $10 USD (regra Noones); range_max deve ser > range_min
-    range_min_val = 10.0
-    range_max_val = max(range_min_val + 1.0, round(valor_usdt * 1.1, 2))
+    # API exige strings sem decimal ("10" não "10.0")
+    range_min_int = 10
+    range_max_int = max(range_min_int + 1, int(round(valor_usdt * 1.1)))
 
     payload = {
         "crypto_currency_code": "USDT",
         "currency": "USD",
-        # "other-bank-transfer" (não "bank-transfer") — usa default_flow_type "default",
-        # não exige bank_accounts pré-cadastradas e tem offer_terms editáveis (isEditable=true).
-        # "bank-transfer" exige bt-auto + bank_accounts cadastradas → inviável para CUP.
+        # "other-bank-transfer": sem bank_accounts, sem payment_method_label
+        # default_flow_type="default". Confirmado funcionando via Teste A/B.
         "payment_method": "other-bank-transfer",
-        # payment_method_label NÃO enviado: não faz parte do payload da UI para
-        # other-bank-transfer (causava 500 Internal Server Error)
         "offer_type_field": "sell",
         "margin": "0",
-        "range_min": str(range_min_val),
-        "range_max": str(range_max_val),
+        "range_min": str(range_min_int),
+        "range_max": str(range_max_int),
         "payment_window": "30",
         "payment_details": instrucoes_pagamento,
-        # offer_terms NÃO enviado: other-bank-transfer tem isPredefined=true
-        # o servidor usa os termos predefinidos — mandar o campo causa 500
         "default_flow_type": "default",
         "label": f"Remessa #{transacao_id[:8].upper()}",
     }

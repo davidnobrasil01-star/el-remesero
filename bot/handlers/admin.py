@@ -127,13 +127,13 @@ async def cmd_revisao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 @apenas_admin
 async def cmd_noones_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Diagnóstico Noones: testa autenticação e payloads mínimos para diagnosticar 500.
+    Diagnóstico Noones: testa autenticação e criação de oferta.
     Uso: /admin_noones_debug
     """
     await update.message.reply_text("🔍 Testando conexão com Noones API...")
 
-    import httpx
-    from payments.noones_client import _get_access_token, _headers, BASE_URL
+    from payments.noones_client import _get_access_token, criar_oferta_venda
+    import uuid
 
     # 1. Testar autenticação
     try:
@@ -146,86 +146,27 @@ async def cmd_noones_debug(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(f"❌ Falha na autenticação: {e}")
         return
 
-    # 2. Teste A: payload mínimo com slug "other-bank-transfer"
-    await update.message.reply_text("🧪 Teste A: payload mínimo other-bank-transfer...")
-    payload_a = {
-        "crypto_currency_code": "USDT",
-        "currency": "USD",
-        "payment_method": "other-bank-transfer",
-        "offer_type_field": "sell",
-        "margin": "0",
-        "range_min": "10",
-        "range_max": "20",
-        "payment_window": "30",
-        "default_flow_type": "default",
-    }
+    # 2. Testar criação de oferta com payload completo
+    await update.message.reply_text("🧪 Testando offer/create com payload completo...")
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                f"{BASE_URL}/offer/create",
-                headers=await _headers(),
-                data=payload_a,
-            )
+        resultado = await criar_oferta_venda(
+            valor_usdt=15.0,
+            numero_cartao_cup="9225-1234-5678-9012",
+            nome_titular="TEST USUARIO",
+            transacao_id=str(uuid.uuid4()),
+        )
         await update.message.reply_text(
-            f"Teste A → HTTP {resp.status_code}\n<code>{resp.text[:300]}</code>",
+            f"✅ <b>Oferta criada com sucesso!</b>\n"
+            f"ID: <code>{resultado['oferta_id']}</code>\n"
+            f"🔗 <a href='{resultado['link_oferta']}'>Ver oferta</a>\n\n"
+            f"⚠️ Lembre de desativar esta oferta de teste no Noones.",
             parse_mode="HTML",
         )
     except Exception as e:
-        await update.message.reply_text(f"Teste A erro: <code>{e}</code>", parse_mode="HTML")
-
-    # 3. Teste B: mesmo payload com payment_method_id numérico (5410 = Other Bank Transfer)
-    await update.message.reply_text("🧪 Teste B: payment_method_id=5410 (numérico)...")
-    payload_b = {
-        "crypto_currency_code": "USDT",
-        "currency": "USD",
-        "payment_method_id": "5410",
-        "offer_type_field": "sell",
-        "margin": "0",
-        "range_min": "10",
-        "range_max": "20",
-        "payment_window": "30",
-        "default_flow_type": "default",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                f"{BASE_URL}/offer/create",
-                headers=await _headers(),
-                data=payload_b,
-            )
         await update.message.reply_text(
-            f"Teste B → HTTP {resp.status_code}\n<code>{resp.text[:300]}</code>",
+            f"❌ Falha ao criar oferta:\n<code>{e}</code>",
             parse_mode="HTML",
         )
-    except Exception as e:
-        await update.message.reply_text(f"Teste B erro: <code>{e}</code>", parse_mode="HTML")
-
-    # 4. Teste C: bank-transfer com payload mínimo (sem bank_accounts) — ver erro exato
-    await update.message.reply_text("🧪 Teste C: bank-transfer mínimo (para comparar)...")
-    payload_c = {
-        "crypto_currency_code": "USDT",
-        "currency": "USD",
-        "payment_method": "bank-transfer",
-        "offer_type_field": "sell",
-        "margin": "0",
-        "range_min": "10",
-        "range_max": "20",
-        "payment_window": "30",
-        "default_flow_type": "bt-auto",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                f"{BASE_URL}/offer/create",
-                headers=await _headers(),
-                data=payload_c,
-            )
-        await update.message.reply_text(
-            f"Teste C → HTTP {resp.status_code}\n<code>{resp.text[:300]}</code>",
-            parse_mode="HTML",
-        )
-    except Exception as e:
-        await update.message.reply_text(f"Teste C erro: <code>{e}</code>", parse_mode="HTML")
 
 
 @apenas_admin
