@@ -7,6 +7,7 @@ from loguru import logger
 from db.repositories import transacao_repo, destinatario_repo, usuario_repo
 from bot.mensagens import (
     MSG_PIX_CONFIRMADO,
+    MSG_ENVIANDO_CUBA,
     MSG_ENTREGANDO,
     MSG_CONCLUIDO,
     MSG_FALHA,
@@ -32,24 +33,39 @@ async def _enviar_mensagem(telegram_id: int, texto: str, **kwargs) -> None:
         logger.error(f"Erro ao enviar notificação para {telegram_id}: {e}")
 
 
+def _buscar_telegram_id(usuario_id: str) -> int | None:
+    """Retorna o telegram_id de um usuário pelo seu ID interno."""
+    from db.client import get_supabase
+    sb = get_supabase()
+    res = sb.table("usuarios").select("telegram_id").eq("id", usuario_id).maybe_single().execute()
+    return res.data["telegram_id"] if res.data else None
+
+
 async def notificar_pix_confirmado(transacao_id: str) -> None:
-    """Notifica o cliente que o PIX foi confirmado e o dinheiro está sendo enviado."""
+    """Notifica o cliente que o PIX foi confirmado e o envio está sendo processado."""
     transacao = transacao_repo.buscar_por_id(transacao_id)
     if not transacao:
         return
-
     destinatario = destinatario_repo.buscar_por_id(str(transacao.destinatario_id))
-
-    # Busca telegram_id via usuario_id
-    from db.client import get_supabase
-    sb = get_supabase()
-    res = sb.table("usuarios").select("telegram_id").eq("id", str(transacao.usuario_id)).maybe_single().execute()
-    if not res.data:
+    telegram_id = _buscar_telegram_id(str(transacao.usuario_id))
+    if not telegram_id:
         return
-    telegram_id = res.data["telegram_id"]
-
     nome = destinatario.nome_completo if destinatario else "seu familiar"
     texto = MSG_PIX_CONFIRMADO.format(nome=nome)
+    await _enviar_mensagem(telegram_id, texto)
+
+
+async def notificar_enviando_cuba(transacao_id: str) -> None:
+    """Notifica o cliente que a transferência está a caminho de Cuba."""
+    transacao = transacao_repo.buscar_por_id(transacao_id)
+    if not transacao:
+        return
+    destinatario = destinatario_repo.buscar_por_id(str(transacao.destinatario_id))
+    telegram_id = _buscar_telegram_id(str(transacao.usuario_id))
+    if not telegram_id:
+        return
+    nome = destinatario.nome_completo if destinatario else "seu familiar"
+    texto = MSG_ENVIANDO_CUBA.format(nome=nome)
     await _enviar_mensagem(telegram_id, texto)
 
 
@@ -59,22 +75,13 @@ async def notificar_concluido(transacao_id: str) -> None:
     transacao = transacao_repo.buscar_por_id(transacao_id)
     if not transacao:
         return
-
-    from db.client import get_supabase
-    sb = get_supabase()
-    res = sb.table("usuarios").select("telegram_id, username, nome_completo").eq("id", str(transacao.usuario_id)).maybe_single().execute()
-    if not res.data:
-        return
-    telegram_id = res.data["telegram_id"]
-
     destinatario = destinatario_repo.buscar_por_id(str(transacao.destinatario_id))
+    telegram_id = _buscar_telegram_id(str(transacao.usuario_id))
+    if not telegram_id:
+        return
     nome_dest = destinatario.nome_completo if destinatario else "seu familiar"
-
-    # Mensagem de conclusão
     texto = MSG_CONCLUIDO.format(nome=nome_dest, cup=f"{transacao.valor_cup_destinatario:,.0f}")
     await _enviar_mensagem(telegram_id, texto)
-
-    # Enviar comprovante
     await gerar_e_enviar_comprovante(transacao_id, telegram_id)
 
 
@@ -83,14 +90,10 @@ async def notificar_falha(transacao_id: str) -> None:
     transacao = transacao_repo.buscar_por_id(transacao_id)
     if not transacao:
         return
-
-    from db.client import get_supabase
-    sb = get_supabase()
-    res = sb.table("usuarios").select("telegram_id").eq("id", str(transacao.usuario_id)).maybe_single().execute()
-    if not res.data:
+    telegram_id = _buscar_telegram_id(str(transacao.usuario_id))
+    if not telegram_id:
         return
-
-    await _enviar_mensagem(res.data["telegram_id"], MSG_FALHA)
+    await _enviar_mensagem(telegram_id, MSG_FALHA)
 
 
 async def alertar_admin_revisao_manual(transacao_id: str, erro: str) -> None:

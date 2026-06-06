@@ -67,6 +67,10 @@ async def _entregar_manual(transacao_id: str) -> bool:
 
     transacao_repo.atualizar_status(transacao_id, StatusTransacao.ENTREGANDO)
 
+    # Notificar cliente que a entrega está em andamento
+    from services.notificacao_service import notificar_enviando_cuba
+    await notificar_enviando_cuba(transacao_id)
+
     metodo = destinatario.metodo_entrega or "mlc"
     metodo_label = "MLC (cartão Visa)" if metodo == "mlc" else "CUP (Transfermovil)"
     cup_fmt = f"{transacao.valor_cup_destinatario:,.0f}".replace(",", ".")
@@ -199,6 +203,10 @@ async def _entregar_noones_cup(transacao_id, transacao, destinatario, compra) ->
     transacao_repo.atualizar_status(transacao_id, StatusTransacao.AGUARDANDO_COMPRADOR, {
         "noones_trade_id": resultado["oferta_id"],
     })
+
+    # Notificar cliente que o envio está a caminho
+    from services.notificacao_service import notificar_enviando_cuba
+    await notificar_enviando_cuba(transacao_id)
 
     if _bot_app:
         await _bot_app.bot.send_message(

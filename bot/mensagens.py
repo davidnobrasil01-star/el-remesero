@@ -117,8 +117,14 @@ MSG_PIX_EXPIRADO = (
 
 MSG_PIX_CONFIRMADO = (
     "✅ <b>PIX recebido!</b>\n\n"
-    "Estamos enviando o dinheiro para <b>{nome}</b> em Cuba...\n"
-    "Você receberá o comprovante em instantes. 🚀"
+    "Pagamento confirmado! Estamos processando sua transferência.\n"
+    "Você receberá atualizações aqui. 📲"
+)
+
+MSG_ENVIANDO_CUBA = (
+    "📤 <b>Transferência a caminho!</b>\n\n"
+    "O envio para <b>{nome}</b> em Cuba já foi iniciado.\n"
+    "Você receberá o comprovante assim que for confirmado o recebimento. 🇨🇺"
 )
 
 MSG_ENTREGANDO = "📤 Transferência em andamento..."
