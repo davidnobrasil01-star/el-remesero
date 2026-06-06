@@ -253,30 +253,49 @@ async def testar_criar_oferta_debug(valor_usdt: float = 10.0) -> dict:
     También prueba offer_type_field vs type para confirmar el campo correcto.
     """
     casos = {
-        "payload_correto": {
-            "currency": "USDT",
+        # crypto_currency_code + fiat CUP + offer_type_field
+        "A_crypto_code_fiat_cup": {
+            "crypto_currency_code": "USDT",
+            "currency": "CUP",
             "payment_method": "bank-transfer",
             "payment_method_label": "Transfermovil CUP",
-            "type": "sell",
-            "margin": "0",
-            "range_min": "1",
-            "range_max": str(round(valor_usdt * 1.1, 2)),
-            "payment_window": "30",
-            "payment_details": "DIAGNÓSTICO — NÃO CRIAR",
-            "offer_terms": "DIAGNÓSTICO — NÃO CRIAR",
-        },
-        "com_vendor_terms": {
-            "currency": "USDT",
-            "payment_method": "bank-transfer",
-            "payment_method_label": "Transfermovil CUP",
-            "type": "sell",
+            "offer_type_field": "sell",
             "vendor_terms": "1",
             "margin": "0",
             "range_min": "1",
             "range_max": str(round(valor_usdt * 1.1, 2)),
             "payment_window": "30",
-            "payment_details": "DIAGNÓSTICO — NÃO CRIAR",
-            "offer_terms": "DIAGNÓSTICO — NÃO CRIAR",
+            "payment_details": "DIAGNÓSTICO",
+            "offer_terms": "DIAGNÓSTICO",
+        },
+        # crypto_currency_code + fiat USD + offer_type_field
+        "B_crypto_code_fiat_usd": {
+            "crypto_currency_code": "USDT",
+            "currency": "USD",
+            "payment_method": "bank-transfer",
+            "payment_method_label": "Transfermovil CUP",
+            "offer_type_field": "sell",
+            "vendor_terms": "1",
+            "margin": "0",
+            "range_min": "1",
+            "range_max": str(round(valor_usdt * 1.1, 2)),
+            "payment_window": "30",
+            "payment_details": "DIAGNÓSTICO",
+            "offer_terms": "DIAGNÓSTICO",
+        },
+        # só offer_type_field sem currency (ver se aceita)
+        "C_sem_currency": {
+            "crypto_currency_code": "USDT",
+            "payment_method": "bank-transfer",
+            "payment_method_label": "Transfermovil CUP",
+            "offer_type_field": "sell",
+            "vendor_terms": "1",
+            "margin": "0",
+            "range_min": "1",
+            "range_max": str(round(valor_usdt * 1.1, 2)),
+            "payment_window": "30",
+            "payment_details": "DIAGNÓSTICO",
+            "offer_terms": "DIAGNÓSTICO",
         },
     }
 
