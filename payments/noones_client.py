@@ -91,15 +91,8 @@ async def criar_oferta_venda(
         f"Prazo maximo para pagamento: 30 minutos."
     )
 
-    termos_oferta = (
-        f"Venda de USDT com pagamento via Transfermovil (CUP). "
-        f"1. Voce recebera as instrucoes do cartao destino nas mensagens da negociacao. "
-        f"2. Realize a transferencia pelo app Transfermovil. "
-        f"3. Envie o comprovante de pagamento neste chat. "
-        f"4. O vendedor liberara o USDT apos verificar o pagamento. "
-        f"Nao cancele a negociacao antes do prazo. "
-        f"Em caso de duvidas, use o chat da negociacao."
-    )
+    # range_min mínimo é $10 USD (regra Noones)
+    range_max = max(10.0, round(valor_usdt * 1.1, 2))
 
     payload = {
         "crypto_currency_code": "USDT",
@@ -108,11 +101,14 @@ async def criar_oferta_venda(
         "payment_method_label": "Transfermovil CUP",
         "offer_type_field": "sell",
         "margin": "0",
-        "range_min": "1",
-        "range_max": str(round(valor_usdt * 1.1, 2)),
+        "range_min": "10",
+        "range_max": str(range_max),
         "payment_window": "30",
         "payment_details": instrucoes_pagamento,
-        "offer_terms": termos_oferta,
+        # offer_terms NÃO enviado: bank-transfer usa termos predefinidos
+        # (isPredefined=true, isEditable=false). Enviar offer_terms causa erro
+        # validation.is_required_with_predefined_offer_terms_ex
+        "default_flow_type": "default",
         "label": f"Remessa #{transacao_id[:8].upper()}",
     }
 
