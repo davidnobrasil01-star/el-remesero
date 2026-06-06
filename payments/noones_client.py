@@ -83,7 +83,7 @@ async def criar_oferta_venda(
         dict com: oferta_id, link_oferta
     """
     instrucoes_pagamento = (
-        f"Realizze o pagamento via Transfermovil ao cartao: {numero_cartao_cup}\n"
+        f"Realize o pagamento via Transfermovil ao cartao: {numero_cartao_cup}\n"
         f"Titular da conta: {nome_titular}\n"
         f"Referencia da transferencia: {transacao_id[:8].upper()}\n"
         f"Apos realizar o pagamento, envie o comprovante (screenshot) neste chat. "
@@ -97,7 +97,10 @@ async def criar_oferta_venda(
     payload = {
         "crypto_currency_code": "USDT",
         "currency": "USD",
-        "payment_method": "bank-transfer",
+        # "other-bank-transfer" (não "bank-transfer") — usa default_flow_type "default",
+        # não exige bank_accounts pré-cadastradas e tem offer_terms editáveis (isEditable=true).
+        # "bank-transfer" exige bt-auto + bank_accounts cadastradas → inviável para CUP.
+        "payment_method": "other-bank-transfer",
         "payment_method_label": "Transfermovil CUP",
         "offer_type_field": "sell",
         "margin": "0",
@@ -105,12 +108,8 @@ async def criar_oferta_venda(
         "range_max": str(range_max),
         "payment_window": "30",
         "payment_details": instrucoes_pagamento,
-        # offer_terms NÃO enviado: bank-transfer usa termos predefinidos
-        # (isPredefined=true, isEditable=false). Enviar offer_terms causa erro
-        # validation.is_required_with_predefined_offer_terms_ex
-        # "bt-auto" = valor correto para bank-transfer (API pública exige este valor;
-        # outros métodos usam "default", mas bank-transfer usa "bt-auto")
-        "default_flow_type": "bt-auto",
+        "offer_terms": instrucoes_pagamento,
+        "default_flow_type": "default",
         "label": f"Remessa #{transacao_id[:8].upper()}",
     }
 
