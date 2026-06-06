@@ -91,8 +91,9 @@ async def criar_oferta_venda(
         f"Prazo maximo para pagamento: 30 minutos."
     )
 
-    # range_min mínimo é $10 USD (regra Noones)
-    range_max = max(10.0, round(valor_usdt * 1.1, 2))
+    # range_min mínimo é $10 USD (regra Noones); range_max deve ser > range_min
+    range_min_val = 10.0
+    range_max_val = max(range_min_val + 1.0, round(valor_usdt * 1.1, 2))
 
     payload = {
         "crypto_currency_code": "USDT",
@@ -101,11 +102,12 @@ async def criar_oferta_venda(
         # não exige bank_accounts pré-cadastradas e tem offer_terms editáveis (isEditable=true).
         # "bank-transfer" exige bt-auto + bank_accounts cadastradas → inviável para CUP.
         "payment_method": "other-bank-transfer",
-        "payment_method_label": "Transfermovil CUP",
+        # payment_method_label NÃO enviado: não faz parte do payload da UI para
+        # other-bank-transfer (causava 500 Internal Server Error)
         "offer_type_field": "sell",
         "margin": "0",
-        "range_min": "10",
-        "range_max": str(range_max),
+        "range_min": str(range_min_val),
+        "range_max": str(range_max_val),
         "payment_window": "30",
         "payment_details": instrucoes_pagamento,
         "offer_terms": instrucoes_pagamento,
@@ -121,8 +123,11 @@ async def criar_oferta_venda(
             headers=await _headers(),
             data=payload,  # form-encoded conforme docs Noones
         )
-        logger.debug(f"Noones HTTP status: {resp.status_code} | body: {resp.text[:300]}")
-        resp.raise_for_status()
+        logger.debug(f"Noones HTTP status: {resp.status_code} | body: {resp.text[:500]}")
+        if not resp.is_success:
+            raise RuntimeError(
+                f"Noones HTTP {resp.status_code}: {resp.text[:400]}"
+            )
         dados = resp.json()
 
     logger.debug(f"Noones offer/create resposta: {dados}")
