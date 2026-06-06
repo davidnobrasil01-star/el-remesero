@@ -94,10 +94,12 @@ async def criar_oferta_venda(
     Returns:
         dict com: oferta_id, link_oferta, instrucoes (para envio no chat do trade)
     """
-    # range_min mínimo é $10 USD (regra Noones); range_max deve ser > range_min
+    # range_min = range_max = valor exato em USDT (arredondado para inteiro).
+    # Isso força o comprador a comprar exatamente o valor da remessa.
+    # Noones exige range_max > range_min, então max = min + 1.
     # API exige strings sem decimal ("10" não "10.0")
-    range_min_int = 10
-    range_max_int = max(range_min_int + 1, int(round(valor_usdt * 1.1)))
+    range_min_int = max(1, int(valor_usdt))          # floor do USDT
+    range_max_int = range_min_int + 1                 # exatamente 1 USDT acima do mínimo
 
     payload = {
         "crypto_currency_code": "USDT",
