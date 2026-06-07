@@ -51,8 +51,11 @@ class Settings(BaseSettings):
     webhook_url: str = ""
 
     # Configurações de negócio
+    # margem_minima_cup_por_brl: quanto o operador fica por real enviado
+    # Taxa ao cliente = mercado_eltoque - margem_minima_cup_por_brl
+    # Ex: mercado=113, margem=5 → cliente recebe 108 CUP/BRL
     margem_minima_cup_por_brl: float = Field(default=5.0)
-    taxa_ofertada_cup_por_brl: float = Field(default=97.0)
+    taxa_ofertada_cup_por_brl: float = Field(default=97.0)  # legado — não usado mais
     limite_minimo_brl: float = Field(default=65.0)  # Noones exige ≥10 USDT ≈ R$65
     limite_maximo_brl: float = Field(default=3000.0)
     limite_diario_brl: float = Field(default=3000.0)

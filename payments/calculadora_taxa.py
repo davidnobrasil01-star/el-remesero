@@ -89,12 +89,20 @@ async def obter_taxa_brl_cup() -> float:
         return await _buscar_cotacao_cache("BRL_CUP_MERCADO", fallback=103.0)
 
 
-def calcular_cotacao_cliente() -> float:
+async def calcular_taxa_cliente() -> float:
     """
-    Retorna a taxa ofertada ao cliente (configurada no .env).
-    Ex: 97 CUP por R$1,00
+    Calcula a taxa dinâmica oferecida ao cliente.
+    Taxa = mercado_informal (ElToque) - margem_operador
+    Ex: mercado 113 CUP/BRL, margem 5 → cliente recebe 108 CUP/BRL.
+    Ajuste MARGEM_MINIMA_CUP_POR_BRL no Railway para controlar o lucro.
     """
-    return settings.taxa_ofertada_cup_por_brl
+    taxa_mercado = await obter_taxa_brl_cup()
+    taxa_cliente = round(taxa_mercado - settings.margem_minima_cup_por_brl, 2)
+    logger.debug(
+        f"Taxa dinâmica: mercado={taxa_mercado:.2f} - margem={settings.margem_minima_cup_por_brl} "
+        f"= {taxa_cliente:.2f} CUP/BRL"
+    )
+    return taxa_cliente
 
 
 async def calcular_transacao(valor_brl: float) -> dict:
@@ -103,37 +111,36 @@ async def calcular_transacao(valor_brl: float) -> dict:
 
     Retorna:
         valor_brl: float — valor que o cliente paga
-        taxa_cup_por_brl: float — taxa mostrada ao cliente
+        taxa_cup_por_brl: float — taxa mostrada ao cliente (dinâmica: mercado - margem)
         valor_cup_destinatario: float — CUP que o destinatário recebe
-        valor_usdt_necessario: float — USDT que precisamos enviar ao QvaPay
-        taxa_mercado_brl_cup: float — taxa real de mercado (para calcular lucro)
+        valor_usdt_necessario: float — USDT necessário para a entrega
+        taxa_mercado_brl_cup: float — taxa real de mercado (ElToque)
         lucro_estimado_brl: float — lucro estimado da operação
     """
-    taxa_cliente = calcular_cotacao_cliente()
     taxa_mercado = await obter_taxa_brl_cup()
     brl_usd = await obter_taxa_brl_usd()
+
+    # Taxa dinâmica: mercado - margem do operador
+    taxa_cliente = round(taxa_mercado - settings.margem_minima_cup_por_brl, 2)
 
     # CUP que o destinatário recebe
     valor_cup = round(valor_brl * taxa_cliente, 0)
 
-    # USDT que precisamos enviar ao QvaPay
-    # 1 USDT = ~1 USD, QvaPay interna converte USD → CUP pelo mercado
-    usd_cup = taxa_mercado * brl_usd  # taxa mercado em CUP/USD
+    # USDT necessário: CUP ÷ (CUP/USD)
+    usd_cup = taxa_mercado * brl_usd   # CUP por USD no mercado informal
     valor_usdt = round(valor_cup / usd_cup, 8) if usd_cup > 0 else round(valor_brl / brl_usd * 0.97, 8)
 
     # Custo em BRL para cobrir o USDT enviado
     custo_brl = round(valor_usdt * brl_usd, 2)
 
-    # Lucro estimado
+    # Lucro estimado = margem em CUP convertida para BRL
     lucro_brl = round(valor_brl - custo_brl, 2)
 
-    # Verificar margem mínima
-    margem_cup = (taxa_mercado - taxa_cliente)
-    if margem_cup < settings.margem_minima_cup_por_brl:
-        logger.warning(
-            f"Margem abaixo do mínimo: {margem_cup:.2f} CUP/BRL "
-            f"(mínimo: {settings.margem_minima_cup_por_brl})"
-        )
+    logger.info(
+        f"Cotação: R${valor_brl} → {valor_cup:.0f} CUP "
+        f"({taxa_cliente:.1f} CUP/BRL) | {valor_usdt:.4f} USDT | "
+        f"lucro ~R${lucro_brl:.2f}"
+    )
 
     return {
         "valor_brl": valor_brl,
