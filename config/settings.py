@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     webhook_mode: bool = False
     webhook_url: str = ""
 
+    # Canal/grupo Telegram de compradores cubanos de USDT
+    # Pode ser @username do canal ou ID numérico (ex: -1001234567890)
+    # O bot posta automaticamente cada nova oferta Noones neste canal
+    telegram_canal_compradores_id: str = ""
+
     # Configurações de negócio
     # margem_minima_cup_por_brl: quanto o operador fica por real enviado
     # Taxa ao cliente = mercado_eltoque - margem_minima_cup_por_brl

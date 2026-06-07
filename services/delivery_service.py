@@ -213,6 +213,37 @@ async def _entregar_tropipay(transacao_id, transacao, destinatario, compra) -> b
 NOONES_MINIMO_USDT = 10.0  # Noones exige range_min >= $10 USD
 
 
+async def _notificar_canal_compradores(valor_usdt: float, link_oferta: str) -> None:
+    """
+    Posta a oferta automaticamente no canal/grupo Telegram de compradores cubanos.
+    Configurar TELEGRAM_CANAL_COMPRADORES_ID no Railway com o ID ou @username do canal.
+    """
+    from services.notificacao_service import _bot_app
+    canal_id = settings.telegram_canal_compradores_id
+    if not canal_id or not _bot_app:
+        return
+
+    texto = (
+        f"🇨🇺 <b>USDT disponible — compra ahora</b>\n\n"
+        f"💰 <b>{valor_usdt:.0f} USDT</b> en venta\n"
+        f"💳 Paga CUP vía <b>Transfermovil</b>\n"
+        f"⚡️ Liberación inmediata al recibir comprobante\n"
+        f"⏱️ Límite: 30 minutos\n\n"
+        f"🔗 <a href='{link_oferta}'>Abrir oferta en Noones</a>"
+    )
+
+    try:
+        await _bot_app.bot.send_message(
+            chat_id=canal_id,
+            text=texto,
+            parse_mode="HTML",
+            disable_web_page_preview=False,
+        )
+        logger.info(f"Oferta anunciada no canal de compradores: {link_oferta}")
+    except Exception as e:
+        logger.warning(f"Erro ao notificar canal de compradores ({canal_id}): {e}")
+
+
 async def _entregar_noones_cup(transacao_id, transacao, destinatario, compra) -> bool:
     from payments.noones_client import criar_oferta_venda
     from services.notificacao_service import _bot_app
@@ -242,6 +273,7 @@ async def _entregar_noones_cup(transacao_id, transacao, destinatario, compra) ->
     from services.notificacao_service import notificar_enviando_cuba
     await notificar_enviando_cuba(transacao_id)
 
+    # Notificar admin
     if _bot_app:
         await _bot_app.bot.send_message(
             chat_id=settings.admin_telegram_id,
@@ -254,6 +286,9 @@ async def _entregar_noones_cup(transacao_id, transacao, destinatario, compra) ->
             ),
             parse_mode="HTML",
         )
+
+    # Anunciar automaticamente no canal de compradores cubanos
+    await _notificar_canal_compradores(valor_usdt, resultado["link_oferta"])
 
     return True
 
